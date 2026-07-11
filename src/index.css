@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: 'Baloo 2', system-ui, sans-serif;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 0%, #1c4b6b 0%, #0f2a3d 55%, #0a1c29 100%);
+  color: #f2f6fb;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Prevent iOS text selection during drags on the board */
+canvas {
+  touch-action: none;
+}
