@@ -4,6 +4,27 @@
 
 :root {
   color-scheme: dark;
+  /* Light (warm) theme — dark ink on off-white cards. */
+  --card: 244 241 234;
+  --card-alt: 234 228 214;
+  --ink: 46 42 37;
+  --ink-soft: 107 99 87;
+  --ink-faint: 154 146 132;
+  --page-a: #2a6485;
+  --page-b: #163b52;
+  --page-c: #0d2536;
+}
+
+:root.dark {
+  /* Dark theme — light ink on slate cards that sit clearly above a deeper page. */
+  --card: 56 70 86;
+  --card-alt: 74 90 107;
+  --ink: 236 242 248;
+  --ink-soft: 175 187 199;
+  --ink-faint: 124 138 151;
+  --page-a: #123040;
+  --page-b: #0a1c28;
+  --page-c: #050d14;
 }
 
 html,
@@ -14,15 +35,25 @@ body,
 }
 
 body {
-  font-family: 'Baloo 2', system-ui, sans-serif;
+  font-family: Nunito, system-ui, sans-serif;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 50% 0%, #1c4b6b 0%, #0f2a3d 55%, #0a1c29 100%);
+  /* Calm deep-ocean backdrop so cards float above it. */
+  background: radial-gradient(circle at 50% -10%, var(--page-a) 0%, var(--page-b) 55%, var(--page-c) 100%);
   color: #f2f6fb;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: background 0.3s ease;
 }
 
-/* Prevent iOS text selection during drags on the board */
+/* Prevent iOS text selection / scroll during board drags. */
 canvas {
   touch-action: none;
+}
+
+/* Respect reduced-motion preferences. */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

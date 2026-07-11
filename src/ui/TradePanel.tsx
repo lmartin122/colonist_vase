@@ -5,28 +5,27 @@ import { bankTradeRatio } from '../engine/helpers';
 import type { GameState, Resource } from '../engine/types';
 import { RESOURCES } from '../engine/types';
 import { useGame } from '../state/store';
-import { RESOURCE_ICON } from './icons';
+import { ResourceIcon } from './ResourceIcon';
 
-type EmptyBag = Record<Resource, number>;
-const zeroBag = (): EmptyBag => ({ wood: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 });
+type Bag = Record<Resource, number>;
+const zeroBag = (): Bag => ({ wood: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 });
+
+const CARD = 'rounded-2xl bg-card text-ink shadow-pop ring-1 ring-black/5 dark:ring-white/15';
+const BTN = 'inline-flex items-center justify-center gap-1.5 rounded-xl font-bold transition-all duration-200 ease-smooth active:scale-[0.96] disabled:cursor-not-allowed';
 
 /** Bank/port trades and player-to-player offers with the bots. */
 export function TradePanel({ game, onClose }: { game: GameState; onClose: () => void }) {
   const [tab, setTab] = useState<'bank' | 'players'>('bank');
   return (
     <div className="pointer-events-auto absolute inset-0 z-20 flex items-end justify-center bg-black/40 p-4 backdrop-blur-sm sm:items-center">
-      <motion.div
-        initial={{ y: 40, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        className="w-full max-w-lg rounded-2xl bg-slate-900 p-5 ring-1 ring-white/15"
-      >
+      <motion.div initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ type: 'spring', stiffness: 240, damping: 22 }} className={`max-h-[90vh] w-full max-w-lg overflow-y-auto p-4 sm:p-5 ${CARD}`}>
         <div className="mb-4 flex items-center gap-2">
           <h2 className="font-display text-xl font-extrabold">Trade</h2>
-          <div className="ml-auto flex gap-1 rounded-lg bg-white/5 p-1 text-sm">
+          <div className="ml-auto flex gap-1 rounded-xl bg-card-alt p-1 text-sm">
             <Tab active={tab === 'bank'} onClick={() => setTab('bank')}>Bank</Tab>
             <Tab active={tab === 'players'} onClick={() => setTab('players')}>Players</Tab>
           </div>
-          <button onClick={onClose} className="rounded-lg bg-white/10 px-2 py-1 text-sm hover:bg-white/20">✕</button>
+          <button onClick={onClose} className={`${BTN} h-8 w-8 bg-card-alt text-ink hover:bg-ink/10`}>✕</button>
         </div>
         {tab === 'bank' ? <BankTrade game={game} onClose={onClose} /> : <PlayerTrade game={game} onClose={onClose} />}
       </motion.div>
@@ -36,13 +35,11 @@ export function TradePanel({ game, onClose }: { game: GameState; onClose: () => 
 
 function Tab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button onClick={onClick} className={`rounded-md px-3 py-1 font-semibold ${active ? 'bg-white/90 text-slate-900' : 'text-white/70'}`}>
+    <button onClick={onClick} className={`rounded-lg px-3 py-1 font-bold transition ${active ? 'bg-ink text-card shadow-soft' : 'text-ink-soft hover:text-ink'}`}>
       {children}
     </button>
   );
 }
-
-// --- Bank / port -----------------------------------------------------------
 
 function BankTrade({ game, onClose }: { game: GameState; onClose: () => void }) {
   const dispatch = useGame((s) => s.dispatch);
@@ -55,43 +52,37 @@ function BankTrade({ game, onClose }: { game: GameState; onClose: () => void }) 
 
   return (
     <div>
-      <p className="mb-3 text-sm text-white/50">
-        Trade with the bank. Ports you own improve your rate automatically.
-      </p>
-      <div className="mb-4 flex items-center justify-center gap-4">
-        <ResourceSelect label="Give" value={give} onChange={setGive} game={game} humanId={humanId} showRatio />
-        <div className="pt-6 text-2xl text-white/40">→</div>
-        <ResourceSelect label="Get" value={get} onChange={setGet} game={game} humanId={humanId} />
+      <p className="mb-3 text-sm text-ink-soft">Trade with the bank. Ports you own improve your rate automatically.</p>
+      <div className="mb-4 flex flex-col items-center justify-center gap-2 sm:flex-row sm:gap-4">
+        <ResourcePick label="Give" value={give} onChange={setGive} game={game} humanId={humanId} showRatio />
+        <div className="rotate-90 text-2xl text-ink-faint sm:rotate-0 sm:pt-6">→</div>
+        <ResourcePick label="Get" value={get} onChange={setGet} game={game} humanId={humanId} />
       </div>
-      <div className="mb-4 text-center text-sm text-white/60">
-        Give <b>{ratio}</b> {RESOURCE_ICON[give]} for <b>1</b> {RESOURCE_ICON[get]}
+      <div className="mb-4 flex items-center justify-center gap-1.5 text-sm text-ink-soft">
+        Give <b className="text-ink">{ratio}</b> <ResourceIcon resource={give} size={16} /> for <b className="text-ink">1</b> <ResourceIcon resource={get} size={16} />
       </div>
-      <button
-        disabled={!affordable}
-        onClick={() => { dispatch({ type: 'bankTrade', give, receive: get }); onClose(); }}
-        className={`w-full rounded-xl px-4 py-3 font-bold ${affordable ? 'bg-emerald-500 text-emerald-950 hover:bg-emerald-400' : 'cursor-not-allowed bg-white/5 text-white/30'}`}
-      >
+      <button disabled={!affordable} onClick={() => { dispatch({ type: 'bankTrade', give, receive: get }); onClose(); }} className={`${BTN} w-full px-4 py-3 ${affordable ? 'bg-p-green text-white hover:brightness-105' : 'bg-card-alt text-ink-faint'}`}>
         Trade
       </button>
     </div>
   );
 }
 
-function ResourceSelect({ label, value, onChange, game, humanId, showRatio }: {
+function ResourcePick({ label, value, onChange, game, humanId, showRatio }: {
   label: string; value: Resource; onChange: (r: Resource) => void; game: GameState; humanId: number; showRatio?: boolean;
 }) {
   return (
     <div className="text-center">
-      <div className="mb-1 text-xs uppercase tracking-wide text-white/40">{label}</div>
+      <div className="mb-1 text-xs font-bold uppercase tracking-wide text-ink-faint">{label}</div>
       <div className="flex gap-1">
         {RESOURCES.map((r) => (
           <button
             key={r}
             onClick={() => onChange(r)}
-            className={`flex h-11 w-11 flex-col items-center justify-center rounded-lg text-lg ${value === r ? 'bg-yellow-300 text-yellow-950' : 'bg-white/10 hover:bg-white/20'}`}
             title={showRatio ? `rate ${bankTradeRatio(game, humanId, r)}:1` : undefined}
+            className={`flex h-10 w-10 items-center justify-center rounded-xl transition sm:h-11 sm:w-11 ${value === r ? 'bg-amber-300 shadow-soft' : 'bg-card-alt hover:-translate-y-0.5'}`}
           >
-            {RESOURCE_ICON[r]}
+            <ResourceIcon resource={r} size={22} />
           </button>
         ))}
       </div>
@@ -99,14 +90,12 @@ function ResourceSelect({ label, value, onChange, game, humanId, showRatio }: {
   );
 }
 
-// --- Player-to-player ------------------------------------------------------
-
 function PlayerTrade({ game, onClose }: { game: GameState; onClose: () => void }) {
   const dispatch = useGame((s) => s.dispatch);
   const humanId = useGame((s) => s.humanId);
   const me = game.players[humanId];
-  const [giveBag, setGiveBag] = useState<EmptyBag>(zeroBag);
-  const [getBag, setGetBag] = useState<EmptyBag>(zeroBag);
+  const [giveBag, setGiveBag] = useState<Bag>(zeroBag);
+  const [getBag, setGetBag] = useState<Bag>(zeroBag);
   const [message, setMessage] = useState<string | null>(null);
 
   const canGive = RESOURCES.every((r) => giveBag[r] <= me.resources[r]);
@@ -114,47 +103,37 @@ function PlayerTrade({ game, onClose }: { game: GameState; onClose: () => void }
 
   const offer = () => {
     const partner = bestTradePartner(game, humanId, giveBag, getBag);
-    if (partner === null) {
-      setMessage('All opponents declined that offer.');
-      return;
-    }
+    if (partner === null) { setMessage('All opponents declined that offer.'); return; }
     dispatch({ type: 'playerTrade', partner, give: giveBag, receive: getBag });
     onClose();
   };
 
   return (
     <div>
-      <p className="mb-3 text-sm text-white/50">Propose a swap. A bot accepts only if it comes out ahead.</p>
+      <p className="mb-3 text-sm text-ink-soft">Propose a swap. A bot accepts only if it comes out ahead.</p>
       <BagEditor label="You give" bag={giveBag} setBag={setGiveBag} max={(r) => me.resources[r]} />
       <BagEditor label="You get" bag={getBag} setBag={setGetBag} max={() => 9} />
-      {message && <div className="mt-2 text-center text-sm text-rose-300">{message}</div>}
-      <button
-        disabled={!nonEmpty || !canGive}
-        onClick={offer}
-        className={`mt-4 w-full rounded-xl px-4 py-3 font-bold ${nonEmpty && canGive ? 'bg-emerald-500 text-emerald-950 hover:bg-emerald-400' : 'cursor-not-allowed bg-white/5 text-white/30'}`}
-      >
+      {message && <div className="mt-2 text-center text-sm font-semibold text-p-red">{message}</div>}
+      <button disabled={!nonEmpty || !canGive} onClick={offer} className={`${BTN} mt-4 w-full px-4 py-3 ${nonEmpty && canGive ? 'bg-p-green text-white hover:brightness-105' : 'bg-card-alt text-ink-faint'}`}>
         Offer to opponents
       </button>
     </div>
   );
 }
 
-function BagEditor({ label, bag, setBag, max }: { label: string; bag: EmptyBag; setBag: (b: EmptyBag) => void; max: (r: Resource) => number }) {
-  const adjust = (r: Resource, d: number) => {
-    const next = Math.max(0, Math.min(max(r), bag[r] + d));
-    setBag({ ...bag, [r]: next });
-  };
+function BagEditor({ label, bag, setBag, max }: { label: string; bag: Bag; setBag: (b: Bag) => void; max: (r: Resource) => number }) {
+  const adjust = (r: Resource, d: number) => setBag({ ...bag, [r]: Math.max(0, Math.min(max(r), bag[r] + d)) });
   return (
     <div className="mb-3">
-      <div className="mb-1 text-xs uppercase tracking-wide text-white/40">{label}</div>
+      <div className="mb-1 text-xs font-bold uppercase tracking-wide text-ink-faint">{label}</div>
       <div className="grid grid-cols-5 gap-2">
         {RESOURCES.map((r) => (
-          <div key={r} className="flex flex-col items-center rounded-lg bg-white/5 p-1.5">
-            <span className="text-lg">{RESOURCE_ICON[r]}</span>
+          <div key={r} className="flex flex-col items-center rounded-xl bg-card-alt p-1.5">
+            <ResourceIcon resource={r} size={22} />
             <div className="mt-1 flex items-center gap-1">
-              <button className="h-5 w-5 rounded bg-white/10 text-xs hover:bg-white/20" onClick={() => adjust(r, -1)}>−</button>
-              <span className="w-4 text-center text-sm font-bold">{bag[r]}</span>
-              <button className="h-5 w-5 rounded bg-white/10 text-xs hover:bg-white/20" onClick={() => adjust(r, 1)}>+</button>
+              <button className="h-5 w-5 rounded-md bg-ink/10 text-xs font-bold hover:bg-ink/20 active:scale-90" onClick={() => adjust(r, -1)}>−</button>
+              <span className="w-4 text-center text-sm font-extrabold">{bag[r]}</span>
+              <button className="h-5 w-5 rounded-md bg-ink/10 text-xs font-bold hover:bg-ink/20 active:scale-90" onClick={() => adjust(r, 1)}>+</button>
             </div>
           </div>
         ))}

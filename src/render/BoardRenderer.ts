@@ -1,17 +1,20 @@
-import { Application, Circle, Container, Graphics, Text, TextStyle } from 'pixi.js';
-import type { Board, GameState, PortType } from '../engine/types';
+import { Application, Circle, Container, FillGradient, Graphics, Text, TextStyle } from 'pixi.js';
+import type { Board, GameState, PortType, TileType } from '../engine/types';
 import { NUMBER_PIPS } from '../engine/constants';
 import {
   HIGHLIGHT,
   OCEAN,
   OCEAN_DEEP,
+  OCEAN_WAVE,
   PLAYER_HEX,
   ROBBER_COLOR,
   TILE_COLORS,
-  TILE_GLYPH,
+  TILE_COLORS_LIGHT,
+  TILE_MOTIF,
   TILE_STROKE,
   TOKEN_BG,
   TOKEN_HOT,
+  TOKEN_INK,
 } from './palette';
 
 export interface InteractionMode {
@@ -74,54 +77,135 @@ export class BoardRenderer {
   private drawWater(board: Board): void {
     const maxR = Math.max(...board.vertices.map((v) => Math.hypot(v.point.x, v.point.y)));
     const g = new Graphics();
-    g.circle(0, 0, maxR + 90).fill(OCEAN_DEEP);
-    g.circle(0, 0, maxR + 60).fill(OCEAN);
+    // Calm layered ocean.
+    g.circle(0, 0, maxR + 140).fill(OCEAN_DEEP);
+    g.circle(0, 0, maxR + 78).fill(OCEAN);
+    // Subtle concentric wave accents around the island.
+    for (let i = 0; i < 3; i++) {
+      const r = maxR + 44 + i * 26;
+      g.circle(0, 0, r).stroke({ width: 2, color: OCEAN_WAVE, alpha: 0.18 - i * 0.04 });
+    }
+    // Soft light rim just inside the coastline.
+    g.circle(0, 0, maxR + 30).stroke({ width: 6, color: OCEAN_WAVE, alpha: 0.14 });
     this.water.addChild(g);
   }
 
   private drawTile(board: Board, tileId: number): void {
     const tile = board.tiles[tileId];
+    const { x: cx, y: cy } = tile.center;
     const pts = tile.vertexIds.flatMap((v) => [board.vertices[v].point.x, board.vertices[v].point.y]);
+
+    // Soft drop shadow beneath the tile for gentle depth.
+    const shadow = new Graphics();
+    shadow.poly(pts).fill({ color: 0x0a1a24, alpha: 0.28 });
+    shadow.position.set(0, 7);
+    this.tiles.addChild(shadow);
+
+    // Tile with a subtle vertical gradient (lighter top → base).
+    const grad = new FillGradient({
+      type: 'linear',
+      start: { x: 0, y: 0 },
+      end: { x: 0, y: 1 },
+      colorStops: [
+        { offset: 0, color: TILE_COLORS_LIGHT[tile.type] },
+        { offset: 1, color: TILE_COLORS[tile.type] },
+      ],
+      textureSpace: 'local',
+    });
     const g = new Graphics();
-    g.poly(pts).fill(TILE_COLORS[tile.type]).stroke({ width: 5, color: TILE_STROKE, alpha: 0.55 });
-    // Soft top highlight for a subtle 3D feel.
-    g.poly(pts).fill({ color: 0xffffff, alpha: 0.06 });
+    g.poly(pts).fill(grad).stroke({ width: 3, color: TILE_STROKE, alpha: 0.35 });
     this.tiles.addChild(g);
 
-    const glyph = new Text({
-      text: TILE_GLYPH[tile.type],
-      style: new TextStyle({ fontSize: 40 }),
-    });
-    glyph.anchor.set(0.5);
-    glyph.position.set(tile.center.x, tile.center.y - 30);
-    this.tiles.addChild(glyph);
+    this.drawTerrainMotif(tile.type, cx, cy - 20);
+    if (tile.number !== null) this.drawToken(cx, cy + 26, tile.number);
+  }
 
-    if (tile.number !== null) this.drawToken(tile.center.x, tile.center.y + 24, tile.number);
+  /** Flat, stylized terrain motif drawn with primitives (no emoji). */
+  private drawTerrainMotif(type: TileType, cx: number, cy: number): void {
+    const g = new Graphics();
+    const dark = TILE_MOTIF[type];
+    switch (type) {
+      case 'wood': {
+        g.roundRect(cx - 4, cy + 6, 8, 14, 2).fill(0x6b4a2f);
+        for (let i = 0; i < 3; i++) {
+          const w = 26 - i * 6;
+          const y = cy - 14 + i * 12;
+          g.poly([cx - w / 2, y + 14, cx + w / 2, y + 14, cx, y]).fill(dark);
+        }
+        break;
+      }
+      case 'brick': {
+        const bw = 15, bh = 8, gap = 2;
+        for (let row = 0; row < 2; row++) {
+          const off = row % 2 ? bw / 2 : 0;
+          for (let col = -1; col <= 1; col++) {
+            g.roundRect(cx + col * (bw + gap) - bw / 2 + off - 4, cy - 8 + row * (bh + gap), bw, bh, 2).fill(dark);
+          }
+        }
+        break;
+      }
+      case 'sheep': {
+        g.ellipse(cx, cy + 4, 18, 12).fill(0xf3ecdd); // wool
+        g.ellipse(cx + 12, cy - 1, 7, 6).fill(dark); // head
+        g.roundRect(cx - 10, cy + 12, 3.5, 8, 1).fill(dark);
+        g.roundRect(cx + 5, cy + 12, 3.5, 8, 1).fill(dark);
+        break;
+      }
+      case 'wheat': {
+        for (let i = -1; i <= 1; i++) {
+          const x = cx + i * 10;
+          g.roundRect(x - 1.5, cy - 4, 3, 22, 1.5).fill(dark);
+          for (let k = 0; k < 3; k++) {
+            g.ellipse(x - 4, cy - 2 + k * 6, 3.5, 5).fill(dark);
+            g.ellipse(x + 4, cy - 2 + k * 6, 3.5, 5).fill(dark);
+          }
+        }
+        break;
+      }
+      case 'ore': {
+        g.poly([cx - 22, cy + 16, cx - 4, cy - 14, cx + 8, cy + 16]).fill(dark);
+        g.poly([cx - 4, cy + 16, cx + 10, cy - 6, cx + 22, cy + 16]).fill(0x707d8c);
+        g.poly([cx - 10, cy - 2, cx - 4, cy - 14, cx + 2, cy - 2]).fill(0xe8edf2); // snow cap
+        break;
+      }
+      case 'desert': {
+        g.circle(cx, cy - 4, 9).fill(0xf0d67e); // sun
+        for (let i = 0; i < 8; i++) {
+          const a = (Math.PI / 4) * i;
+          g.moveTo(cx + Math.cos(a) * 12, cy - 4 + Math.sin(a) * 12)
+            .lineTo(cx + Math.cos(a) * 16, cy - 4 + Math.sin(a) * 16)
+            .stroke({ width: 2.5, color: 0xf0d67e, alpha: 0.8 });
+        }
+        break;
+      }
+    }
+    this.tiles.addChild(g);
   }
 
   private drawToken(x: number, y: number, value: number): void {
     const hot = value === 6 || value === 8;
     const group = new Container();
     const disc = new Graphics();
-    disc.circle(0, 0, 26).fill(TOKEN_BG).stroke({ width: 2, color: 0x9a8c6a });
+    disc.circle(0, 3, 22).fill({ color: 0x0a1a24, alpha: 0.25 }); // soft shadow
+    disc.circle(0, 0, 22).fill(TOKEN_BG).stroke({ width: 1.5, color: 0x000000, alpha: 0.06 });
     const label = new Text({
       text: String(value),
       style: new TextStyle({
-        fontFamily: 'Baloo 2, sans-serif',
-        fontSize: hot ? 28 : 24,
+        fontFamily: 'Baloo 2, Nunito, sans-serif',
+        fontSize: hot ? 26 : 23,
         fontWeight: '800',
-        fill: hot ? TOKEN_HOT : 0x33302a,
+        fill: hot ? TOKEN_HOT : TOKEN_INK,
       }),
     });
     label.anchor.set(0.5);
-    label.position.set(0, -4);
+    label.position.set(0, -3);
 
     // Probability pips under the number.
     const pips = NUMBER_PIPS[value] ?? 0;
     const pipGfx = new Graphics();
     const spread = (pips - 1) * 4;
     for (let i = 0; i < pips; i++) {
-      pipGfx.circle(-spread / 2 + i * 4, 12, 1.6).fill(hot ? TOKEN_HOT : 0x6b6353);
+      pipGfx.circle(-spread / 2 + i * 4, 12, 1.6).fill(hot ? TOKEN_HOT : 0x8a8172);
     }
     group.addChild(disc, label, pipGfx);
     group.position.set(x, y);
@@ -141,18 +225,23 @@ export class BoardRenderer {
 
   private drawPortBadge(_board: Board, mid: { x: number; y: number }, port: PortType): void {
     const len = Math.hypot(mid.x, mid.y) || 1;
-    const px = mid.x + (mid.x / len) * 46;
-    const py = mid.y + (mid.y / len) * 46;
+    const nx = mid.x / len;
+    const ny = mid.y / len;
+    const px = mid.x + nx * 48;
+    const py = mid.y + ny * 48;
     const g = new Graphics();
-    g.roundRect(px - 26, py - 15, 52, 30, 10).fill({ color: 0x0c2334, alpha: 0.85 }).stroke({ width: 2, color: 0x7fb3d5 });
-    // connector
-    g.moveTo(px, py).lineTo(mid.x, mid.y).stroke({ width: 3, color: 0x7fb3d5, alpha: 0.5 });
+    // Dotted connector from the coast to the badge.
+    g.moveTo(mid.x + nx * 10, mid.y + ny * 10).lineTo(px, py).stroke({ width: 3, color: 0xf3ecdd, alpha: 0.4 });
+    // Warm rounded badge with a soft shadow.
+    g.roundRect(px - 24, py - 12 + 3, 48, 24, 9).fill({ color: 0x0a1a24, alpha: 0.25 });
+    g.roundRect(px - 24, py - 12, 48, 24, 9).fill(TOKEN_BG).stroke({ width: 1.5, color: 0x000000, alpha: 0.06 });
+    if (port !== '3:1') g.circle(px - 13, py, 6).fill(TILE_COLORS[port]);
     const label = new Text({
-      text: port === '3:1' ? '3:1' : `2:1 ${TILE_GLYPH[port]}`,
-      style: new TextStyle({ fontFamily: 'Baloo 2, sans-serif', fontSize: 14, fontWeight: '700', fill: 0xe8f4ff }),
+      text: port === '3:1' ? '3:1' : '2:1',
+      style: new TextStyle({ fontFamily: 'Baloo 2, Nunito, sans-serif', fontSize: 13, fontWeight: '800', fill: TOKEN_INK }),
     });
     label.anchor.set(0.5);
-    label.position.set(px, py);
+    label.position.set(port === '3:1' ? px : px + 6, py);
     this.ports.addChild(g, label);
   }
 
@@ -194,8 +283,10 @@ export class BoardRenderer {
     const ay = a.y + (b.y - a.y) * 0.18;
     const bx = b.x + (a.x - b.x) * 0.18;
     const by = b.y + (a.y - b.y) * 0.18;
-    g.moveTo(ax, ay).lineTo(bx, by).stroke({ width: 14, color: TILE_STROKE, cap: 'round' });
+    g.moveTo(ax, ay + 3).lineTo(bx, by + 3).stroke({ width: 14, color: 0x0a1a24, alpha: 0.25, cap: 'round' });
+    g.moveTo(ax, ay).lineTo(bx, by).stroke({ width: 13, color: darken(color, 0.65), cap: 'round' });
     g.moveTo(ax, ay).lineTo(bx, by).stroke({ width: 9, color, cap: 'round' });
+    g.moveTo(ax, ay - 1.5).lineTo(bx, by - 1.5).stroke({ width: 3, color: lighten(color, 0.4), alpha: 0.7, cap: 'round' });
     c.addChild(g);
     c.pivot.set((ax + bx) / 2, (ay + by) / 2);
     c.position.set((ax + bx) / 2, (ay + by) / 2);
@@ -206,9 +297,12 @@ export class BoardRenderer {
     const c = new Container();
     const g = new Graphics();
     const s = 15;
-    g.poly([-s, s, -s, -s * 0.2, 0, -s, s, -s * 0.2, s, s])
-      .fill(color)
-      .stroke({ width: 3, color: TILE_STROKE });
+    g.ellipse(0, s + 3, 15, 5).fill({ color: 0x0a1a24, alpha: 0.25 }); // ground shadow
+    const shape = [-s, s, -s, -s * 0.2, 0, -s, s, -s * 0.2, s, s];
+    g.poly(shape).fill(darken(color, 0.7));
+    g.poly(shape).fill(color).stroke({ width: 2, color: darken(color, 0.55) });
+    // Roof highlight.
+    g.poly([-s, -s * 0.2, 0, -s, s, -s * 0.2, 0, -s * 0.05]).fill({ color: lighten(color, 0.35), alpha: 0.6 });
     c.addChild(g);
     c.position.set(p.x, p.y);
     return c;
@@ -218,10 +312,14 @@ export class BoardRenderer {
     const c = new Container();
     const g = new Graphics();
     const s = 20;
-    g.roundRect(-s, -2, s * 2, s, 3).fill(color).stroke({ width: 3, color: TILE_STROKE });
-    g.poly([-s, -2, -s, -s * 0.6, -s * 0.2, -s, s * 0.4, -s * 0.6, s * 0.4, -2])
-      .fill(color)
-      .stroke({ width: 3, color: TILE_STROKE });
+    g.ellipse(0, s + 1, 22, 6).fill({ color: 0x0a1a24, alpha: 0.25 }); // ground shadow
+    g.roundRect(-s, -2, s * 2, s, 3).fill(color).stroke({ width: 2, color: darken(color, 0.55) });
+    const tower = [-s, -2, -s, -s * 0.6, -s * 0.2, -s, s * 0.4, -s * 0.6, s * 0.4, -2];
+    g.poly(tower).fill(color).stroke({ width: 2, color: darken(color, 0.55) });
+    // Highlights for depth.
+    g.roundRect(-s + 3, 1, s * 2 - 6, 4, 2).fill({ color: lighten(color, 0.4), alpha: 0.5 });
+    g.circle(s * 0.55, 6, 2.2).fill(darken(color, 0.5));
+    g.circle(s * 0.85, 6, 2.2).fill(darken(color, 0.5));
     c.addChild(g);
     c.position.set(p.x, p.y);
     return c;
@@ -230,8 +328,10 @@ export class BoardRenderer {
   private buildRobber(): Container {
     const c = new Container();
     const g = new Graphics();
-    g.ellipse(0, 6, 12, 16).fill(ROBBER_COLOR).stroke({ width: 2, color: 0x000000, alpha: 0.4 });
-    g.circle(0, -12, 9).fill(ROBBER_COLOR).stroke({ width: 2, color: 0x000000, alpha: 0.4 });
+    g.ellipse(0, 20, 12, 4).fill({ color: 0x0a1a24, alpha: 0.3 });
+    g.ellipse(0, 6, 12, 16).fill(ROBBER_COLOR).stroke({ width: 1.5, color: 0x000000, alpha: 0.35 });
+    g.circle(0, -12, 9).fill(ROBBER_COLOR).stroke({ width: 1.5, color: 0x000000, alpha: 0.35 });
+    g.ellipse(-3, -14, 3, 4).fill({ color: 0xffffff, alpha: 0.18 }); // subtle highlight
     c.addChild(g);
     return c;
   }
@@ -315,4 +415,25 @@ export class BoardRenderer {
   destroy(): void {
     this.view.destroy({ children: true });
   }
+}
+
+/** Mix a color toward black by `amount` (0..1 keeps more of the original). */
+function darken(hex: number, amount: number): number {
+  return scale(hex, amount);
+}
+
+/** Mix a color toward white by `amount`. */
+function lighten(hex: number, amount: number): number {
+  const r = (hex >> 16) & 0xff;
+  const g = (hex >> 8) & 0xff;
+  const b = hex & 0xff;
+  const mix = (c: number) => Math.round(c + (255 - c) * amount);
+  return (mix(r) << 16) | (mix(g) << 8) | mix(b);
+}
+
+function scale(hex: number, factor: number): number {
+  const r = Math.round(((hex >> 16) & 0xff) * factor);
+  const g = Math.round(((hex >> 8) & 0xff) * factor);
+  const b = Math.round((hex & 0xff) * factor);
+  return (r << 16) | (g << 8) | b;
 }

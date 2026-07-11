@@ -1,16 +1,36 @@
 import type { PlayerColor, TileType } from '../engine/types';
 
-/** Tile fill colors — an original, slightly desaturated modern palette. */
+/** Terrain fill colors — bright but not oversaturated, modern flat look. */
 export const TILE_COLORS: Record<TileType, number> = {
-  wood: 0x3f7d4e,
-  brick: 0xc1543a,
-  sheep: 0x8fca5c,
-  wheat: 0xe6b84f,
-  ore: 0x7f8b9c,
-  desert: 0xd9c9a3,
+  wood: 0x4e8d57, // forest
+  brick: 0xce6a45, // hills
+  sheep: 0xa7d06a, // pasture
+  wheat: 0xeac65c, // fields
+  ore: 0x8b97a6, // mountains
+  desert: 0xe3d6b0, // sand
 };
 
-/** Emoji glyph shown at each tile center. */
+/** Slightly lighter tint used for the top of each tile's vertical gradient. */
+export const TILE_COLORS_LIGHT: Record<TileType, number> = {
+  wood: 0x62a86b,
+  brick: 0xe08159,
+  sheep: 0xbcdd82,
+  wheat: 0xf3d675,
+  ore: 0xa3aeba,
+  desert: 0xefe4c4,
+};
+
+/** Darker terrain motif color drawn on each tile (tree, brick, etc.). */
+export const TILE_MOTIF: Record<TileType, number> = {
+  wood: 0x2f5f38,
+  brick: 0x9c4326,
+  sheep: 0x6fa03f,
+  wheat: 0xc79a2f,
+  ore: 0x5f6b7a,
+  desert: 0xcbb98a,
+};
+
+/** Emoji still used for the small coastal port badges. */
 export const TILE_GLYPH: Record<TileType, string> = {
   wood: '🌲',
   brick: '🧱',
@@ -21,23 +41,25 @@ export const TILE_GLYPH: Record<TileType, string> = {
 };
 
 export const PLAYER_HEX: Record<PlayerColor, number> = {
+  blue: 0x3b82f6,
   red: 0xe4572e,
-  blue: 0x3a86ff,
-  orange: 0xf6900d,
-  white: 0xf1f5f9,
+  green: 0x2fa85a,
+  purple: 0x8b5cf6,
 };
 
 export const PLAYER_CSS: Record<PlayerColor, string> = {
-  red: '#e4572e',
-  blue: '#3a86ff',
-  orange: '#f6900d',
-  white: '#e2e8f0',
+  blue: '#3B82F6',
+  red: '#E4572E',
+  green: '#2FA85A',
+  purple: '#8B5CF6',
 };
 
-export const OCEAN = 0x1c4b6b;
-export const OCEAN_DEEP = 0x123449;
-export const TILE_STROKE = 0x0a1c29;
-export const ROBBER_COLOR = 0x1e1b16;
-export const TOKEN_BG = 0xf7f1e1;
-export const TOKEN_HOT = 0xb4442f; // red numbers (6 & 8)
+export const OCEAN = 0x2e6e96;
+export const OCEAN_DEEP = 0x1d4d6b;
+export const OCEAN_WAVE = 0x579fb0;
+export const TILE_STROKE = 0x1f2d24;
+export const ROBBER_COLOR = 0x2b2a28;
+export const TOKEN_BG = 0xfbf7ef;
+export const TOKEN_INK = 0x2e2a25;
+export const TOKEN_HOT = 0xc0392b; // red numbers (6 & 8)
 export const HIGHLIGHT = 0xffe066;

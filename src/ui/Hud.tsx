@@ -6,14 +6,14 @@ import type { DevCardType, GameState, Player, Resource } from '../engine/types';
 import { RESOURCES } from '../engine/types';
 import { PLAYER_CSS } from '../render/palette';
 import { useGame, type BuildMode } from '../state/store';
-import { RESOURCE_ICON, RESOURCE_LABEL } from './icons';
+import { ResourceIcon } from './ResourceIcon';
 import { TradePanel } from './TradePanel';
 
 export function Hud() {
   const game = useGame((s) => s.game);
   if (!game) return null;
   return (
-    <div className="pointer-events-none absolute inset-0 select-none">
+    <div className="pointer-events-none absolute inset-0 select-none font-sans">
       <TopBar game={game} />
       <PlayersColumn game={game} />
       <LogPanel game={game} />
@@ -25,25 +25,38 @@ export function Hud() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Top bar: whose turn, phase, dice
-// ---------------------------------------------------------------------------
+// --- shared styles ---------------------------------------------------------
+
+const CARD = 'rounded-2xl bg-card text-ink shadow-panel ring-1 ring-black/5 dark:ring-white/15';
+const BTN_BASE =
+  'inline-flex items-center justify-center gap-1.5 rounded-xl font-bold transition-all duration-200 ease-smooth active:scale-[0.96] disabled:cursor-not-allowed';
+
+function Cost({ cost }: { cost: Partial<Record<Resource, number>> }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      {RESOURCES.filter((r) => cost[r]).map((r) => (
+        <span key={r} className="inline-flex items-center">
+          <ResourceIcon resource={r} size={13} />
+          <span className="ml-0.5 text-[11px] font-bold">{cost[r]}</span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
+// --- Top bar ---------------------------------------------------------------
 
 function TopBar({ game }: { game: GameState }) {
   const thinking = useGame((s) => s.thinking);
   const active = game.players[game.currentPlayer];
-  const phaseLabel = PHASE_LABEL[game.phase];
   return (
-    <div className="absolute left-1/2 top-4 flex -translate-x-1/2 items-center gap-3">
-      <div
-        className="flex items-center gap-2 rounded-2xl bg-black/40 px-4 py-2 backdrop-blur-md ring-1 ring-white/10"
-        style={{ boxShadow: `0 0 0 2px ${PLAYER_CSS[active.color]}66` }}
-      >
-        <span className="h-3 w-3 rounded-full" style={{ background: PLAYER_CSS[active.color] }} />
-        <span className="font-display font-bold">{active.name}</span>
-        <span className="text-white/50">·</span>
-        <span className="text-sm text-white/70">{phaseLabel}</span>
-        {thinking && <span className="ml-1 animate-pulse text-xs text-white/40">thinking…</span>}
+    <div className="absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-2 sm:top-4 sm:gap-3">
+      <div className={`flex items-center gap-2 px-3 py-2 sm:px-4 ${CARD}`}>
+        <span className="h-3 w-3 rounded-full ring-2 ring-white" style={{ background: PLAYER_CSS[active.color] }} />
+        <span className="font-display text-sm font-extrabold sm:text-base">{active.name}</span>
+        <span className="text-ink-faint">·</span>
+        <span className="text-xs text-ink-soft sm:text-sm">{PHASE_LABEL[game.phase]}</span>
+        {thinking && <span className="ml-0.5 animate-pulse text-[11px] text-ink-faint">thinking…</span>}
       </div>
       <Dice dice={game.dice} />
     </div>
@@ -57,10 +70,10 @@ function Dice({ dice }: { dice: [number, number] | null }) {
       {dice.map((d, i) => (
         <motion.div
           key={`${i}-${d}`}
-          initial={{ rotate: -25, scale: 0.4, opacity: 0 }}
+          initial={{ rotate: -30, scale: 0.4, opacity: 0 }}
           animate={{ rotate: 0, scale: 1, opacity: 1 }}
-          transition={{ type: 'spring', stiffness: 320, damping: 18 }}
-          className="flex h-9 w-9 items-center justify-center rounded-lg bg-white font-display text-xl font-extrabold text-slate-900 shadow"
+          transition={{ type: 'spring', stiffness: 320, damping: 17 }}
+          className="flex h-9 w-9 items-center justify-center rounded-xl bg-card font-display text-xl font-extrabold text-ink shadow-soft ring-1 ring-black/5"
         >
           {d}
         </motion.div>
@@ -69,14 +82,12 @@ function Dice({ dice }: { dice: [number, number] | null }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Opponent / player summary panels
-// ---------------------------------------------------------------------------
+// --- Player sidebar --------------------------------------------------------
 
 function PlayersColumn({ game }: { game: GameState }) {
   const humanId = useGame((s) => s.humanId);
   return (
-    <div className="absolute right-3 top-16 flex w-52 flex-col gap-2">
+    <div className="absolute right-2 top-14 flex w-40 flex-col gap-2 sm:right-3 sm:top-16 sm:w-56">
       {game.players.map((p) => (
         <PlayerCard key={p.id} game={game} player={p} isHuman={p.id === humanId} active={p.id === game.currentPlayer} />
       ))}
@@ -86,37 +97,48 @@ function PlayersColumn({ game }: { game: GameState }) {
 
 function PlayerCard({ game, player, isHuman, active }: { game: GameState; player: Player; isHuman: boolean; active: boolean }) {
   const vp = isHuman ? victoryPoints(game, player.id) : publicVictoryPoints(game, player.id);
-  const cards = isHuman ? totalResources(player.resources) : totalResources(player.resources);
+  const cards = totalResources(player.resources);
   const devCount = player.devCards.filter((c) => !c.played).length;
+  const color = PLAYER_CSS[player.color];
   return (
-    <div
-      className={`rounded-xl bg-black/35 px-3 py-2 backdrop-blur-md ring-1 transition ${active ? 'ring-white/40' : 'ring-white/10'}`}
+    <motion.div
+      animate={{ scale: active ? 1 : 0.98, opacity: active ? 1 : 0.9 }}
+      transition={{ duration: 0.2 }}
+      className={`relative overflow-hidden px-3 py-2 sm:py-2.5 ${CARD}`}
+      style={active ? { boxShadow: `0 0 0 2px ${color}, 0 6px 20px -6px rgba(20,30,40,.35)` } : undefined}
     >
-      <div className="flex items-center gap-2">
-        <span className="h-2.5 w-2.5 rounded-full" style={{ background: PLAYER_CSS[player.color] }} />
-        <span className="truncate font-bold">{player.name}</span>
-        <span className="ml-auto font-display text-lg font-extrabold">{vp}</span>
-        <span className="text-[10px] text-white/40">VP</span>
+      {/* Color accent strip */}
+      <span className="absolute left-0 top-0 h-full w-1.5" style={{ background: color }} />
+      <div className="flex items-center gap-2 pl-1">
+        <span className="truncate font-display text-sm font-extrabold">{player.name}</span>
+        {active && <span className="rounded-full bg-ink/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-ink-soft">turn</span>}
+        <span className="ml-auto flex items-baseline gap-0.5">
+          <span className="font-display text-2xl font-extrabold leading-none" style={{ color }}>{vp}</span>
+        </span>
       </div>
-      <div className="mt-1 flex items-center gap-3 text-xs text-white/60">
-        <span title="cards in hand">🃏 {cards}</span>
-        <span title="development cards">📜 {devCount}</span>
-        {game.longestRoad.player === player.id && <span title="Longest Road">🛣️</span>}
-        {game.largestArmy.player === player.id && <span title="Largest Army">⚔️</span>}
-        <span className="ml-auto" title="knights played">🛡️ {player.knightsPlayed}</span>
+      <div className="mt-1.5 flex items-center gap-2.5 pl-1 text-[11px] font-semibold text-ink-soft">
+        <span className="inline-flex items-center gap-1" title="cards in hand">🃏 {cards}</span>
+        <span className="inline-flex items-center gap-1" title="development cards">📜 {devCount}</span>
+        <span className="inline-flex items-center gap-1" title="knights played">🛡️ {player.knightsPlayed}</span>
+        <span className="ml-auto flex gap-1">
+          {game.longestRoad.player === player.id && <Badge title="Longest Road">🛣️</Badge>}
+          {game.largestArmy.player === player.id && <Badge title="Largest Army">⚔️</Badge>}
+        </span>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Action log
-// ---------------------------------------------------------------------------
+function Badge({ children, title }: { children: React.ReactNode; title: string }) {
+  return <span title={title} className="rounded-md bg-amber-100 px-1 py-0.5 text-[11px] ring-1 ring-amber-300/60">{children}</span>;
+}
+
+// --- Log -------------------------------------------------------------------
 
 function LogPanel({ game }: { game: GameState }) {
   const recent = game.log.slice(-5);
   return (
-    <div className="absolute bottom-4 left-3 w-64 rounded-xl bg-black/30 p-2 text-xs text-white/70 backdrop-blur-md ring-1 ring-white/10">
+    <div className={`absolute bottom-3 left-2 hidden w-60 p-2.5 text-xs text-ink-soft sm:left-3 sm:block ${CARD}`}>
       {recent.map((e, i) => (
         <div key={game.log.length - recent.length + i} className="truncate leading-5">
           {e.message}
@@ -126,9 +148,7 @@ function LogPanel({ game }: { game: GameState }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Human control dock: resources + actions
-// ---------------------------------------------------------------------------
+// --- Bottom action dock ----------------------------------------------------
 
 function HumanDock({ game }: { game: GameState }) {
   const humanId = useGame((s) => s.humanId);
@@ -141,61 +161,73 @@ function HumanDock({ game }: { game: GameState }) {
   const inMain = myTurn && game.phase === 'main';
 
   return (
-    <div className="pointer-events-auto absolute bottom-3 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2">
+    <div className="pointer-events-auto absolute bottom-2 left-1/2 flex max-w-[96vw] -translate-x-1/2 flex-col items-center gap-2 sm:bottom-3">
       {/* Resource hand */}
-      <div className="flex gap-1.5 rounded-2xl bg-black/40 p-2 backdrop-blur-md ring-1 ring-white/10">
+      <div className={`flex gap-1 p-1.5 sm:gap-1.5 sm:p-2 ${CARD}`}>
         {RESOURCES.map((r) => (
-          <div key={r} className="flex h-11 w-12 flex-col items-center justify-center rounded-lg bg-white/5" title={RESOURCE_LABEL[r]}>
-            <span className="text-lg leading-none">{RESOURCE_ICON[r]}</span>
-            <span className="mt-0.5 font-display text-sm font-bold">{me.resources[r]}</span>
+          <div key={r} className="flex h-12 w-11 flex-col items-center justify-center rounded-xl bg-card-alt/70 sm:w-12" title={r}>
+            <ResourceIcon resource={r} size={22} />
+            <span className="mt-0.5 font-display text-sm font-extrabold leading-none">{me.resources[r]}</span>
           </div>
         ))}
       </div>
 
       {/* Primary actions */}
-      <div className="flex flex-wrap items-center justify-center gap-2">
+      <div className="flex flex-wrap items-center justify-center gap-1.5">
         {myTurn && game.phase === 'roll' && (
-          <ActionButton primary onClick={() => dispatch({ type: 'rollDice' })}>
+          <button className={`${BTN_BASE} bg-p-green px-5 py-2.5 text-base text-white shadow-soft hover:-translate-y-0.5 hover:brightness-105`} onClick={() => dispatch({ type: 'rollDice' })}>
             🎲 Roll Dice
-          </ActionButton>
+          </button>
         )}
 
         {inMain && (
           <>
-            <BuildButton label="Road" icon="🛣️" mode={{ kind: 'road' }} cost={COSTS.road} build={build} setBuild={setBuild} game={game} me={me} stock={me.stock.roads} />
-            <BuildButton label="Town" icon="🏠" mode={{ kind: 'settlement' }} cost={COSTS.settlement} build={build} setBuild={setBuild} game={game} me={me} stock={me.stock.settlements} />
-            <BuildButton label="City" icon="🏙️" mode={{ kind: 'city' }} cost={COSTS.city} build={build} setBuild={setBuild} game={game} me={me} stock={me.stock.cities} />
-            <ActionButton
+            <BuildButton label="Road" icon="🛣️" mode={{ kind: 'road' }} cost={COSTS.road} build={build} setBuild={setBuild} me={me} stock={me.stock.roads} />
+            <BuildButton label="Town" icon="🏠" mode={{ kind: 'settlement' }} cost={COSTS.settlement} build={build} setBuild={setBuild} me={me} stock={me.stock.settlements} />
+            <BuildButton label="City" icon="🏙️" mode={{ kind: 'city' }} cost={COSTS.city} build={build} setBuild={setBuild} me={me} stock={me.stock.cities} />
+            <SecondaryButton
               disabled={!canAfford(me.resources, COSTS.devCard) || game.devDeck.length === 0}
               onClick={() => dispatch({ type: 'buyDevCard' })}
-              title="1 sheep, 1 wheat, 1 ore"
+              title="Buy development card"
             >
               📜 Dev
-            </ActionButton>
-            <ActionButton onClick={() => setTradeOpen(true)}>🤝 Trade</ActionButton>
-            <ActionButton primary onClick={() => dispatch({ type: 'endTurn' })}>
+            </SecondaryButton>
+            <SecondaryButton onClick={() => setTradeOpen(true)}>🤝 Trade</SecondaryButton>
+            <button className={`${BTN_BASE} bg-p-green px-4 py-2.5 text-sm text-white shadow-soft hover:-translate-y-0.5 hover:brightness-105`} onClick={() => dispatch({ type: 'endTurn' })}>
               End Turn
-            </ActionButton>
+            </button>
           </>
         )}
       </div>
 
       {tradeOpen && inMain && <TradePanel game={game} onClose={() => setTradeOpen(false)} />}
 
-      {/* Development cards */}
       {myTurn && <DevCardBar game={game} me={me} />}
 
-      {build && (
-        <div className="rounded-full bg-yellow-300/90 px-3 py-1 text-xs font-bold text-yellow-950">
-          Select a spot on the board · <button className="underline" onClick={() => setBuild(null)}>cancel</button>
-        </div>
-      )}
-      {game.pending.freeRoads > 0 && myTurn && (
-        <div className="rounded-full bg-yellow-300/90 px-3 py-1 text-xs font-bold text-yellow-950">
-          Place {game.pending.freeRoads} free road{game.pending.freeRoads > 1 ? 's' : ''}
-        </div>
-      )}
+      <AnimatePresence>
+        {build && (
+          <Hint key="build">
+            Select a spot on the board · <button className="underline" onClick={() => setBuild(null)}>cancel</button>
+          </Hint>
+        )}
+        {game.pending.freeRoads > 0 && myTurn && (
+          <Hint key="free">Place {game.pending.freeRoads} free road{game.pending.freeRoads > 1 ? 's' : ''}</Hint>
+        )}
+      </AnimatePresence>
     </div>
+  );
+}
+
+function Hint({ children }: { children: React.ReactNode }) {
+  return (
+    <motion.div
+      initial={{ y: 8, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="rounded-full bg-amber-300 px-3 py-1 text-xs font-bold text-amber-950 shadow-soft"
+    >
+      {children}
+    </motion.div>
   );
 }
 
@@ -217,48 +249,23 @@ function DevCardBar({ game, me }: { game: GameState; me: Player }) {
     counts[c.type].total += 1;
     if (c.boughtOnTurn < game.turn) counts[c.type].playable += 1;
   }
-
-  const hasAny = Object.values(counts).some((c) => c.total > 0);
-  if (!hasAny) return null;
-
+  if (!Object.values(counts).some((c) => c.total > 0)) return null;
   const play = (type: DevCardType) => canPlay && counts[type].playable > 0;
 
   return (
-    <div className="flex items-center gap-1.5 rounded-xl bg-black/35 px-2 py-1.5 text-xs backdrop-blur-md ring-1 ring-white/10">
-      <span className="text-white/40">Cards:</span>
-      {counts.knight.total > 0 && (
-        <DevChip label={`🛡️ Knight ×${counts.knight.total}`} enabled={play('knight')} onClick={() => setBuild({ kind: 'knight' })} />
-      )}
-      {counts.roadBuilding.total > 0 && (
-        <DevChip label={`🛣️ Roads ×${counts.roadBuilding.total}`} enabled={play('roadBuilding')} onClick={() => dispatch({ type: 'playRoadBuilding' })} />
-      )}
-      {counts.monopoly.total > 0 && (
-        <DevChip label={`💰 Monopoly ×${counts.monopoly.total}`} enabled={play('monopoly')} onClick={() => setPicker('monopoly')} />
-      )}
-      {counts.yearOfPlenty.total > 0 && (
-        <DevChip label={`🎁 Plenty ×${counts.yearOfPlenty.total}`} enabled={play('yearOfPlenty')} onClick={() => setPicker('yop')} />
-      )}
-      {counts.victoryPoint.total > 0 && <span className="text-white/60">⭐ VP ×{counts.victoryPoint.total}</span>}
+    <div className={`relative flex items-center gap-1.5 px-2.5 py-1.5 text-xs ${CARD}`}>
+      <span className="font-bold text-ink-faint">Cards:</span>
+      {counts.knight.total > 0 && <DevChip label={`🛡️ Knight ×${counts.knight.total}`} enabled={play('knight')} onClick={() => setBuild({ kind: 'knight' })} />}
+      {counts.roadBuilding.total > 0 && <DevChip label={`🛣️ Roads ×${counts.roadBuilding.total}`} enabled={play('roadBuilding')} onClick={() => dispatch({ type: 'playRoadBuilding' })} />}
+      {counts.monopoly.total > 0 && <DevChip label={`💰 Monopoly ×${counts.monopoly.total}`} enabled={play('monopoly')} onClick={() => setPicker('monopoly')} />}
+      {counts.yearOfPlenty.total > 0 && <DevChip label={`🎁 Plenty ×${counts.yearOfPlenty.total}`} enabled={play('yearOfPlenty')} onClick={() => setPicker('yop')} />}
+      {counts.victoryPoint.total > 0 && <span className="font-semibold text-ink-soft">⭐ VP ×{counts.victoryPoint.total}</span>}
 
       {picker === 'monopoly' && (
-        <ResourcePicker
-          count={1}
-          onPick={(rs) => {
-            dispatch({ type: 'playMonopoly', resource: rs[0] });
-            setPicker(null);
-          }}
-          onClose={() => setPicker(null)}
-        />
+        <ResourcePicker count={1} title="Monopolise a resource" onPick={(rs) => { dispatch({ type: 'playMonopoly', resource: rs[0] }); setPicker(null); }} onClose={() => setPicker(null)} />
       )}
       {picker === 'yop' && (
-        <ResourcePicker
-          count={2}
-          onPick={(rs) => {
-            dispatch({ type: 'playYearOfPlenty', resources: rs });
-            setPicker(null);
-          }}
-          onClose={() => setPicker(null)}
-        />
+        <ResourcePicker count={2} title="Take any two" onPick={(rs) => { dispatch({ type: 'playYearOfPlenty', resources: rs }); setPicker(null); }} onClose={() => setPicker(null)} />
       )}
     </div>
   );
@@ -269,15 +276,14 @@ function DevChip({ label, enabled, onClick }: { label: string; enabled: boolean;
     <button
       disabled={!enabled}
       onClick={onClick}
-      className={`rounded-lg px-2 py-1 font-semibold transition ${enabled ? 'bg-white/10 hover:bg-white/20' : 'cursor-not-allowed text-white/30'}`}
+      className={`${BTN_BASE} px-2 py-1 ${enabled ? 'bg-card-alt hover:-translate-y-0.5 hover:shadow-soft' : 'text-ink-faint opacity-50'}`}
     >
       {label}
     </button>
   );
 }
 
-/** Small popover to choose one or two resources (monopoly / year of plenty). */
-function ResourcePicker({ count, onPick, onClose }: { count: number; onPick: (rs: Resource[]) => void; onClose: () => void }) {
+function ResourcePicker({ count, title, onPick, onClose }: { count: number; title: string; onPick: (rs: Resource[]) => void; onClose: () => void }) {
   const [picked, setPicked] = useState<Resource[]>([]);
   const choose = (r: Resource) => {
     const next = [...picked, r];
@@ -285,73 +291,56 @@ function ResourcePicker({ count, onPick, onClose }: { count: number; onPick: (rs
     else setPicked(next);
   };
   return (
-    <div className="absolute bottom-12 left-1/2 -translate-x-1/2 rounded-xl bg-slate-900/95 p-2 shadow-xl ring-1 ring-white/15">
-      <div className="mb-1 text-center text-[11px] text-white/60">
-        {count === 2 ? `Pick 2 (${picked.length}/2)` : 'Pick a resource'}
+    <div className={`absolute bottom-12 left-1/2 -translate-x-1/2 p-2 ${CARD}`}>
+      <div className="mb-1 whitespace-nowrap text-center text-[11px] font-semibold text-ink-soft">
+        {title} {count === 2 ? `(${picked.length}/2)` : ''}
       </div>
       <div className="flex gap-1">
         {RESOURCES.map((r) => (
-          <button key={r} onClick={() => choose(r)} className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/10 text-lg hover:bg-white/20">
-            {RESOURCE_ICON[r]}
+          <button key={r} onClick={() => choose(r)} className="flex h-10 w-10 items-center justify-center rounded-xl bg-card-alt transition hover:-translate-y-0.5 hover:shadow-soft">
+            <ResourceIcon resource={r} size={22} />
           </button>
         ))}
       </div>
-      <button onClick={onClose} className="mt-1 w-full text-center text-[11px] text-white/40 underline">
-        cancel
-      </button>
+      <button onClick={onClose} className="mt-1 w-full text-center text-[11px] text-ink-faint underline">cancel</button>
     </div>
   );
 }
 
-function BuildButton({
-  label, icon, mode, cost, build, setBuild, game, me, stock,
-}: {
+function BuildButton({ label, icon, mode, cost, build, setBuild, me, stock }: {
   label: string; icon: string; mode: BuildMode; cost: Partial<Record<Resource, number>>;
-  build: BuildMode; setBuild: (m: BuildMode) => void; game: GameState; me: Player; stock: number;
+  build: BuildMode; setBuild: (m: BuildMode) => void; me: Player; stock: number;
 }) {
   const affordable = canAfford(me.resources, cost) && stock > 0;
   const active = build?.kind === (mode as { kind: string }).kind;
-  const costText = RESOURCES.filter((r) => cost[r]).map((r) => `${cost[r]}${RESOURCE_ICON[r]}`).join(' ');
-  void game;
   return (
     <button
       disabled={!affordable}
       onClick={() => setBuild(active ? null : mode)}
-      title={costText}
-      className={`flex flex-col items-center rounded-xl px-3 py-1.5 text-sm font-bold transition ${
-        active ? 'bg-yellow-300 text-yellow-950' : affordable ? 'bg-white/10 hover:bg-white/20' : 'cursor-not-allowed bg-white/5 text-white/30'
+      className={`${BTN_BASE} flex-col px-2.5 py-1.5 ${
+        active ? 'bg-amber-300 text-amber-950 shadow-soft' : affordable ? 'bg-card-alt hover:-translate-y-0.5 hover:shadow-soft' : 'bg-card-alt/50 text-ink-faint'
       }`}
     >
-      <span>{icon} {label}</span>
-      <span className="text-[10px] font-medium opacity-70">{costText}</span>
+      <span className="text-sm">{icon} {label}</span>
+      <span className="opacity-80"><Cost cost={cost} /></span>
     </button>
   );
 }
 
-function ActionButton({ children, onClick, disabled, primary, title }: {
-  children: React.ReactNode; onClick: () => void; disabled?: boolean; primary?: boolean; title?: string;
-}) {
+function SecondaryButton({ children, onClick, disabled, title }: { children: React.ReactNode; onClick: () => void; disabled?: boolean; title?: string }) {
   return (
     <button
       disabled={disabled}
       onClick={onClick}
       title={title}
-      className={`rounded-xl px-4 py-2 text-sm font-bold transition active:scale-95 ${
-        disabled
-          ? 'cursor-not-allowed bg-white/5 text-white/30'
-          : primary
-            ? 'bg-gradient-to-b from-emerald-400 to-emerald-600 text-emerald-950 shadow hover:brightness-110'
-            : 'bg-white/10 hover:bg-white/20'
-      }`}
+      className={`${BTN_BASE} px-3.5 py-2.5 text-sm ${disabled ? 'bg-card-alt/50 text-ink-faint' : 'bg-card-alt hover:-translate-y-0.5 hover:shadow-soft'}`}
     >
       {children}
     </button>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Discard modal (after a 7)
-// ---------------------------------------------------------------------------
+// --- Discard modal ---------------------------------------------------------
 
 function DiscardModal({ game }: { game: GameState }) {
   const humanId = useGame((s) => s.humanId);
@@ -360,33 +349,26 @@ function DiscardModal({ game }: { game: GameState }) {
   const me = game.players[humanId];
   const [sel, setSel] = useState<Record<Resource, number>>({ wood: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 });
 
-  useEffect(() => {
-    setSel({ wood: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 });
-  }, [required]);
-
+  useEffect(() => setSel({ wood: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 }), [required]);
   if (required === undefined) return null;
+
   const chosen = RESOURCES.reduce((s, r) => s + sel[r], 0);
-  const adjust = (r: Resource, d: number) => {
-    setSel((prev) => {
-      const next = Math.max(0, Math.min(me.resources[r], prev[r] + d));
-      return { ...prev, [r]: next };
-    });
-  };
+  const adjust = (r: Resource, d: number) => setSel((prev) => ({ ...prev, [r]: Math.max(0, Math.min(me.resources[r], prev[r] + d)) }));
 
   return (
     <Overlay>
-      <div className="w-full max-w-md rounded-2xl bg-slate-900 p-6 ring-1 ring-white/15">
-        <h2 className="mb-1 font-display text-xl font-extrabold">Discard {required} cards</h2>
-        <p className="mb-4 text-sm text-white/50">You rolled over 7 cards — choose what to lose.</p>
+      <div className={`w-full max-w-md p-6 ${CARD}`}>
+        <h2 className="font-display text-xl font-extrabold">Discard {required} cards</h2>
+        <p className="mb-4 mt-1 text-sm text-ink-soft">You rolled over 7 cards — choose what to lose.</p>
         <div className="mb-4 grid grid-cols-5 gap-2">
           {RESOURCES.map((r) => (
-            <div key={r} className="flex flex-col items-center rounded-xl bg-white/5 p-2">
-              <span className="text-xl">{RESOURCE_ICON[r]}</span>
-              <span className="text-xs text-white/50">have {me.resources[r]}</span>
+            <div key={r} className="flex flex-col items-center rounded-xl bg-card-alt p-2">
+              <ResourceIcon resource={r} size={26} />
+              <span className="mt-0.5 text-[11px] text-ink-faint">have {me.resources[r]}</span>
               <div className="mt-1 flex items-center gap-1">
-                <button className="h-6 w-6 rounded bg-white/10 hover:bg-white/20" onClick={() => adjust(r, -1)}>−</button>
-                <span className="w-5 text-center font-bold">{sel[r]}</span>
-                <button className="h-6 w-6 rounded bg-white/10 hover:bg-white/20" onClick={() => adjust(r, 1)}>+</button>
+                <Stepper onClick={() => adjust(r, -1)}>−</Stepper>
+                <span className="w-5 text-center font-display font-extrabold">{sel[r]}</span>
+                <Stepper onClick={() => adjust(r, 1)}>+</Stepper>
               </div>
             </div>
           ))}
@@ -394,9 +376,7 @@ function DiscardModal({ game }: { game: GameState }) {
         <button
           disabled={chosen !== required}
           onClick={() => dispatch({ type: 'discard', player: humanId, resources: sel })}
-          className={`w-full rounded-xl px-4 py-3 font-bold transition ${
-            chosen === required ? 'bg-rose-500 text-white hover:bg-rose-400' : 'cursor-not-allowed bg-white/5 text-white/30'
-          }`}
+          className={`${BTN_BASE} w-full px-4 py-3 text-base ${chosen === required ? 'bg-p-red text-white hover:brightness-105' : 'bg-card-alt text-ink-faint'}`}
         >
           Discard ({chosen}/{required})
         </button>
@@ -405,9 +385,15 @@ function DiscardModal({ game }: { game: GameState }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Victory + error
-// ---------------------------------------------------------------------------
+function Stepper({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="h-6 w-6 rounded-lg bg-ink/10 font-bold text-ink transition hover:bg-ink/20 active:scale-90">
+      {children}
+    </button>
+  );
+}
+
+// --- Victory + error -------------------------------------------------------
 
 function VictoryOverlay({ game }: { game: GameState }) {
   const newGame = useGame((s) => s.newGame);
@@ -415,19 +401,13 @@ function VictoryOverlay({ game }: { game: GameState }) {
   const winner = game.players[game.winner];
   return (
     <Overlay>
-      <motion.div
-        initial={{ scale: 0.8, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        className="rounded-3xl bg-slate-900 p-10 text-center ring-1 ring-white/15"
-      >
+      <motion.div initial={{ scale: 0.85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 220, damping: 18 }} className={`p-10 text-center ${CARD}`}>
         <div className="mb-2 text-6xl">🏆</div>
-        <h2 className="font-display text-3xl font-extrabold" style={{ color: PLAYER_CSS[winner.color] }}>
-          {winner.name} wins!
-        </h2>
-        <p className="mb-6 mt-1 text-white/50">{victoryPoints(game, winner.id)} victory points</p>
+        <h2 className="font-display text-3xl font-extrabold" style={{ color: PLAYER_CSS[winner.color] }}>{winner.name} wins!</h2>
+        <p className="mb-6 mt-1 text-ink-soft">{victoryPoints(game, winner.id)} victory points</p>
         <button
           onClick={() => newGame({ players: game.players.map((p) => ({ name: p.name, isBot: p.isBot })), layout: 'random' })}
-          className="rounded-2xl bg-gradient-to-b from-emerald-400 to-emerald-600 px-6 py-3 font-display text-lg font-extrabold text-emerald-950 hover:brightness-110"
+          className={`${BTN_BASE} bg-p-green px-6 py-3 text-lg text-white hover:-translate-y-0.5 hover:brightness-105`}
         >
           Play again
         </button>
@@ -448,10 +428,10 @@ function ErrorToast() {
     <AnimatePresence>
       {error && (
         <motion.div
-          initial={{ y: -20, opacity: 0 }}
+          initial={{ y: -16, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="pointer-events-none absolute left-1/2 top-20 -translate-x-1/2 rounded-xl bg-rose-500/90 px-4 py-2 text-sm font-semibold text-white shadow-lg"
+          className="pointer-events-none absolute left-1/2 top-[4.5rem] -translate-x-1/2 rounded-xl bg-p-red px-4 py-2 text-sm font-bold text-white shadow-pop"
         >
           {error}
         </motion.div>
@@ -460,13 +440,9 @@ function ErrorToast() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Shared
-// ---------------------------------------------------------------------------
-
 function Overlay({ children }: { children: React.ReactNode }) {
   return (
-    <div className="pointer-events-auto absolute inset-0 z-20 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+    <div className="pointer-events-auto absolute inset-0 z-20 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
       {children}
     </div>
   );

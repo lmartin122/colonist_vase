@@ -14,18 +14,38 @@ export type BuildMode =
   | { kind: 'roadBuilding'; placed: number[] }
   | { kind: 'knight' };
 
+export type Theme = 'light' | 'dark';
+
 export interface Store {
   game: GameState | null;
   humanId: number;
   build: BuildMode;
   thinking: boolean;
   error: string | null;
+  theme: Theme;
 
   newGame: (config: GameConfig) => void;
   dispatch: (action: Action) => boolean;
   setBuild: (mode: BuildMode) => void;
   clearError: () => void;
+  toggleTheme: () => void;
 }
+
+const THEME_KEY = 'cv-theme';
+
+function initialTheme(): Theme {
+  if (typeof window === 'undefined') return 'light';
+  return localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light';
+}
+
+function applyTheme(theme: Theme): void {
+  if (typeof document !== 'undefined') {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+  }
+}
+
+// Apply the persisted theme as early as possible to avoid a flash.
+applyTheme(initialTheme());
 
 const DELAYS: Record<string, number> = {
   setup: 450,
@@ -94,6 +114,7 @@ export const useGame = create<Store>((set, get) => {
     build: null,
     thinking: false,
     error: null,
+    theme: initialTheme(),
 
     newGame(config) {
       set({ game: createGame(config), build: null, error: null, humanId: 0 });
@@ -119,6 +140,13 @@ export const useGame = create<Store>((set, get) => {
 
     clearError() {
       set({ error: null });
+    },
+
+    toggleTheme() {
+      const theme: Theme = get().theme === 'dark' ? 'light' : 'dark';
+      if (typeof window !== 'undefined') localStorage.setItem(THEME_KEY, theme);
+      applyTheme(theme);
+      set({ theme });
     },
   };
 });

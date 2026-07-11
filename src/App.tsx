@@ -1,6 +1,7 @@
 import { GameCanvas } from './ui/GameCanvas';
 import { Hud } from './ui/Hud';
 import { StartScreen } from './ui/StartScreen';
+import { ThemeToggle } from './ui/ThemeToggle';
 import { useGame } from './state/store';
 
 export default function App() {
@@ -15,6 +16,7 @@ export default function App() {
       ) : (
         <StartScreen />
       )}
+      <ThemeToggle />
     </div>
   );
 }

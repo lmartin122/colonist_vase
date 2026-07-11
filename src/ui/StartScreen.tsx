@@ -17,51 +17,33 @@ export function StartScreen() {
   };
 
   return (
-    <div className="flex h-full w-full items-center justify-center p-6">
+    <div className="flex h-full w-full items-center justify-center p-6 font-sans">
       <motion.div
-        initial={{ opacity: 0, y: 20, scale: 0.98 }}
+        initial={{ opacity: 0, y: 18, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.4, ease: 'easeOut' }}
-        className="w-full max-w-md rounded-3xl bg-white/5 p-8 shadow-2xl ring-1 ring-white/10 backdrop-blur-xl"
+        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        className="w-full max-w-md rounded-2xl bg-card p-8 text-ink shadow-pop ring-1 ring-black/5 dark:ring-white/15"
       >
         <div className="mb-1 text-center text-5xl">🏝️</div>
-        <h1 className="mb-1 text-center font-display text-3xl font-extrabold tracking-tight">
-          Colonist Vase
-        </h1>
-        <p className="mb-6 text-center text-sm text-white/50">
-          Build, trade and settle your way to 10 points.
-        </p>
+        <h1 className="text-center font-display text-3xl font-extrabold tracking-tight">Colonist Vase</h1>
+        <p className="mb-7 mt-1 text-center text-sm text-ink-soft">Build, trade and settle your way to 10 points.</p>
 
-        <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-white/50">
-          Opponents
-        </label>
+        <Label>Opponents</Label>
         <div className="mb-5 grid grid-cols-3 gap-2">
           {[1, 2, 3].map((n) => (
-            <button
-              key={n}
-              onClick={() => setBots(n)}
-              className={pill(bots === n)}
-            >
-              {n} bot{n > 1 ? 's' : ''}
-            </button>
+            <Pill key={n} active={bots === n} onClick={() => setBots(n)}>{n} bot{n > 1 ? 's' : ''}</Pill>
           ))}
         </div>
 
-        <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-white/50">
-          Board
-        </label>
+        <Label>Board</Label>
         <div className="mb-7 grid grid-cols-2 gap-2">
-          <button onClick={() => setLayout('random')} className={pill(layout === 'random')}>
-            🎲 Random
-          </button>
-          <button onClick={() => setLayout('classic')} className={pill(layout === 'classic')}>
-            📜 Classic
-          </button>
+          <Pill active={layout === 'random'} onClick={() => setLayout('random')}>🎲 Random</Pill>
+          <Pill active={layout === 'classic'} onClick={() => setLayout('classic')}>📜 Classic</Pill>
         </div>
 
         <button
           onClick={start}
-          className="w-full rounded-2xl bg-gradient-to-b from-emerald-400 to-emerald-600 px-4 py-3.5 font-display text-lg font-extrabold text-emerald-950 shadow-lg transition hover:brightness-110 active:scale-[0.98]"
+          className="w-full rounded-xl bg-p-green px-4 py-3.5 font-display text-lg font-extrabold text-white shadow-soft transition-all duration-200 ease-smooth hover:-translate-y-0.5 hover:brightness-105 active:scale-[0.98]"
         >
           Play
         </button>
@@ -72,11 +54,19 @@ export function StartScreen() {
 
 const BOT_NAMES = ['Ada', 'Bram', 'Cleo'];
 
-function pill(active: boolean): string {
-  return [
-    'rounded-xl px-3 py-2.5 text-sm font-bold transition',
-    active
-      ? 'bg-white/90 text-slate-900 shadow'
-      : 'bg-white/5 text-white/70 ring-1 ring-white/10 hover:bg-white/10',
-  ].join(' ');
+function Label({ children }: { children: React.ReactNode }) {
+  return <div className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-faint">{children}</div>;
+}
+
+function Pill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-xl px-3 py-2.5 text-sm font-bold transition-all duration-200 ease-smooth active:scale-[0.97] ${
+        active ? 'bg-ink text-card shadow-soft' : 'bg-card-alt text-ink-soft hover:-translate-y-0.5 hover:text-ink'
+      }`}
+    >
+      {children}
+    </button>
+  );
 }
