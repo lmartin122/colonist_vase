@@ -25,6 +25,8 @@ import { RESOURCES } from '../engine/types';
  */
 export function nextBotAction(state: GameState, actor: number): Action | null {
   switch (state.phase) {
+    case 'startingRoll':
+      return { type: 'rollForStart' };
     case 'setup':
       return setupAction(state);
     case 'roll':

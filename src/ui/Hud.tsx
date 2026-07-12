@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CARD_DEV_BACK, RESOURCE_CARD, TRADE_ICON, cityAsset, roadAsset, settlementAsset } from '../assets';
+import { CARD_DEV_BACK, RESOURCE_CARD, TRADE_ICON, cityAsset, diceAsset, roadAsset, settlementAsset } from '../assets';
+import { nextBotAction } from '../ai/bot';
 import { COSTS } from '../engine/constants';
 import { canAfford, publicVictoryPoints, totalResources, victoryPoints } from '../engine/helpers';
 import type { DevCardType, GameState, Player, Resource } from '../engine/types';
@@ -10,9 +11,6 @@ import { useGame } from '../state/store';
 import { CardFlights } from './CardFlights';
 import { Sidebar } from './Sidebar';
 import { TradePanel } from './TradePanel';
-
-/** Seconds a player has to discard before cards are dropped at random. */
-const DISCARD_SECONDS = 20;
 
 type Bag = Record<Resource, number>;
 const zeroBag = (): Bag => ({ wood: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 });
@@ -38,6 +36,7 @@ export function Hud() {
       {/* Play area (left of the sidebar on md+). */}
       <div className="absolute inset-y-0 left-0 right-0 md:right-[300px] lg:right-[330px]">
         <TopBar game={game} />
+        <PhaseGuide game={game} />
         <div className="md:hidden">
           <PlayersColumn game={game} />
         </div>
@@ -82,29 +81,64 @@ function TopBar({ game }: { game: GameState }) {
         <span className="font-display text-sm font-extrabold sm:text-base">{active.name}</span>
         <span className="text-ink-faint">·</span>
         <span className="text-xs text-ink-soft sm:text-sm">{PHASE_LABEL[game.phase]}</span>
+        <TurnCountdown game={game} />
         {thinking && <span className="ml-0.5 animate-pulse text-[11px] text-ink-faint">thinking…</span>}
       </div>
-      <Dice dice={game.dice} />
     </div>
   );
 }
 
-function Dice({ dice }: { dice: [number, number] | null }) {
-  if (!dice) return null;
+function PhaseGuide({ game }: { game: GameState }) {
+  const humanId = useGame((s) => s.humanId);
+  const [visibleTitle, setVisibleTitle] = useState<string | null>(null);
+  const announced = useRef(new Set<string>());
+  const gameJustStarted = game.phase === 'roll' && game.turn === 1;
+  const title = gameJustStarted
+    ? 'Let the Game Begin!'
+    : game.currentPlayer !== humanId
+      ? null
+      : game.phase === 'startingRoll'
+      ? 'Roll the dice to see who starts'
+      : game.phase === 'setup'
+        ? 'Starting Placement'
+        : null;
+
+  useEffect(() => {
+    if (game.phase === 'gameOver') announced.current.clear();
+  }, [game.phase]);
+
+  useEffect(() => {
+    if (!title || announced.current.has(title)) {
+      setVisibleTitle(null);
+      return;
+    }
+    setVisibleTitle(title);
+    // Defer the marker so React StrictMode's discarded effect pass cannot
+    // consume the one-time announcement before it is actually displayed.
+    const markShown = setTimeout(() => announced.current.add(title), 0);
+    const timeout = setTimeout(() => setVisibleTitle(null), 2200);
+    return () => {
+      clearTimeout(markShown);
+      clearTimeout(timeout);
+    };
+  }, [title]);
+
   return (
-    <div className="flex items-center gap-1.5">
-      {dice.map((d, i) => (
-        <motion.div
-          key={`${i}-${d}`}
-          initial={{ rotate: -30, scale: 0.4, opacity: 0 }}
-          animate={{ rotate: 0, scale: 1, opacity: 1 }}
-          transition={{ type: 'spring', stiffness: 320, damping: 17 }}
-          className="flex h-9 w-9 items-center justify-center rounded-xl bg-card font-display text-xl font-extrabold text-ink shadow-soft ring-1 ring-black/5"
-        >
-          {d}
-        </motion.div>
-      ))}
-    </div>
+    <AnimatePresence mode="wait">
+      {visibleTitle && (
+        <div key={visibleTitle} className="pointer-events-none absolute inset-x-0 bottom-[112px] top-0 z-10 flex items-center justify-center">
+          <motion.div
+            key={visibleTitle}
+            initial={{ y: -10, opacity: 0, scale: 0.92 }}
+            animate={{ y: 0, opacity: 1, scale: 1 }}
+            exit={{ y: 8, opacity: 0, scale: 0.96 }}
+            className={`max-w-[calc(100%-2rem)] px-7 py-3 text-center font-display text-3xl font-extrabold sm:text-4xl ${CARD}`}
+          >
+            {visibleTitle}
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -114,8 +148,8 @@ function PlayersColumn({ game }: { game: GameState }) {
   const humanId = useGame((s) => s.humanId);
   return (
     <div className="absolute right-2 top-14 flex w-40 flex-col gap-2 sm:right-3 sm:top-16 sm:w-56">
-      {game.players.map((p) => (
-        <PlayerCard key={p.id} game={game} player={p} isHuman={p.id === humanId} active={p.id === game.currentPlayer} />
+      {game.turnOrder.map((playerId) => (
+        <PlayerCard key={playerId} game={game} player={game.players[playerId]} isHuman={playerId === humanId} active={playerId === game.currentPlayer} />
       ))}
     </div>
   );
@@ -126,13 +160,16 @@ function PlayerCard({ game, player, isHuman, active }: { game: GameState; player
   const cards = totalResources(player.resources);
   const devCount = player.devCards.filter((c) => !c.played).length;
   const color = PLAYER_CSS[player.color];
+  const shownDice = game.phase === 'startingRoll'
+    ? game.startingRoll?.rolls[player.id] ?? null
+    : active ? game.dice : null;
   return (
     <motion.div
       data-player={player.id}
       animate={{ scale: active ? 1 : 0.98, opacity: active ? 1 : 0.9 }}
       transition={{ duration: 0.2 }}
-      className={`relative overflow-hidden px-3 py-2 sm:py-2.5 ${CARD}`}
-      style={active ? { boxShadow: `0 0 0 2px ${color}, 0 6px 20px -6px rgba(20,30,40,.35)` } : undefined}
+      className={`relative overflow-hidden px-3 py-2 sm:py-2.5 ${CARD} ${active ? 'bg-card-alt' : ''}`}
+      style={active ? { boxShadow: `0 0 0 3px ${color}, 0 8px 24px -6px rgba(20,30,40,.45)` } : undefined}
     >
       {/* Color accent strip */}
       <span className="absolute left-0 top-0 h-full w-1.5" style={{ background: color }} />
@@ -144,6 +181,7 @@ function PlayerCard({ game, player, isHuman, active }: { game: GameState; player
         </span>
       </div>
       <div className="mt-1.5 flex items-center gap-2.5 pl-1 text-[11px] font-semibold text-ink-soft">
+        {shownDice && <PlayerDice dice={shownDice} compact />}
         <span className="inline-flex items-center gap-1" title="cards in hand">🃏 {cards}</span>
         <span className="inline-flex items-center gap-1" title="development cards">📜 {devCount}</span>
         <span className="inline-flex items-center gap-1" title="knights played">🛡️ {player.knightsPlayed}</span>
@@ -153,6 +191,24 @@ function PlayerCard({ game, player, isHuman, active }: { game: GameState; player
         </span>
       </div>
     </motion.div>
+  );
+}
+
+function PlayerDice({ dice, compact = false }: { dice: [number, number]; compact?: boolean }) {
+  return (
+    <div className="flex shrink-0 items-center gap-0.5" title={`Rolled ${dice[0]} + ${dice[1]} = ${dice[0] + dice[1]}`}>
+      {dice.map((value, index) => (
+        <motion.img
+          key={`${index}-${value}`}
+          src={diceAsset(value)}
+          alt={`Die showing ${value}`}
+          draggable={false}
+          initial={{ rotate: -25, scale: 0.5 }}
+          animate={{ rotate: 0, scale: 1 }}
+          className={compact ? 'h-6 w-6 drop-shadow-sm' : 'h-8 w-8 drop-shadow-sm'}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -172,6 +228,7 @@ function HumanDock({ game }: { game: GameState }) {
   const myTurn = game.currentPlayer === humanId;
   const inMain = myTurn && game.phase === 'main';
   const canRoll = myTurn && game.phase === 'roll';
+  const canStartRoll = myTurn && game.phase === 'startingRoll';
   const toggle = (kind: 'road' | 'settlement' | 'city') =>
     setBuild(build?.kind === kind ? null : { kind });
 
@@ -179,7 +236,7 @@ function HumanDock({ game }: { game: GameState }) {
   const required = game.phase === 'discard' ? game.pending.discards[humanId] ?? 0 : 0;
   const discarding = required > 0;
   const [sel, setSel] = useState<Bag>(zeroBag);
-  const [remaining, setRemaining] = useState(DISCARD_SECONDS);
+  const [remaining, setRemaining] = useState<number>(game.rules.turnTimer);
   const selectedTotal = RESOURCES.reduce((s, r) => s + sel[r], 0);
 
   // Keep latest hand/target for the timeout closure.
@@ -191,10 +248,10 @@ function HumanDock({ game }: { game: GameState }) {
   useEffect(() => {
     if (!discarding) return;
     setSel(zeroBag());
-    setRemaining(DISCARD_SECONDS);
+    setRemaining(game.rules.turnTimer);
     const started = Date.now();
     const id = setInterval(() => {
-      const left = DISCARD_SECONDS - Math.floor((Date.now() - started) / 1000);
+      const left = game.rules.turnTimer - Math.floor((Date.now() - started) / 1000);
       setRemaining(Math.max(0, left));
       if (left <= 0) {
         clearInterval(id);
@@ -203,7 +260,7 @@ function HumanDock({ game }: { game: GameState }) {
     }, 250);
     return () => clearInterval(id);
     // Re-arm whenever a fresh discard requirement appears.
-  }, [discarding, required, humanId, dispatch]);
+  }, [discarding, required, humanId, dispatch, game.rules.turnTimer]);
 
   const toggleDiscard = (r: Resource, delta: number) =>
     setSel((prev) => {
@@ -216,7 +273,7 @@ function HumanDock({ game }: { game: GameState }) {
     });
 
   return (
-    <div className="pointer-events-auto absolute bottom-2 left-0 right-0 flex flex-col items-center gap-2 px-2 sm:bottom-3 sm:px-3">
+    <div className="pointer-events-auto absolute bottom-2 left-0 right-0 z-20 flex flex-col items-center gap-2 px-2 sm:bottom-3 sm:px-3">
       {discarding && (
         <DiscardBanner
           selected={selectedTotal}
@@ -232,13 +289,21 @@ function HumanDock({ game }: { game: GameState }) {
         {/* Resource hand — fanned cards, grouped by resource (click to discard) */}
         <div
           data-hand-panel
-          className={`flex basis-1/3 items-center gap-2 overflow-x-auto px-3 pb-2 pt-4 ${CARD} ${discarding ? 'ring-2 ring-amber-400' : ''}`}
+          className={`flex min-h-[82px] basis-1/3 items-center gap-2 overflow-x-auto px-3 pb-2 pt-4 ${CARD} ${discarding ? 'ring-2 ring-amber-400' : ''}`}
         >
           <ResourceHand me={me} discard={discarding ? { sel, onToggle: toggleDiscard } : undefined} />
         </div>
 
         {/* Action menu */}
-        <div className={`flex basis-2/3 items-stretch justify-between gap-1.5 p-2 ${CARD}`}>
+        <div className={`relative flex basis-2/3 items-stretch justify-between gap-1.5 p-2 ${CARD}`}>
+          {myTurn && (canStartRoll || canRoll || game.dice) && (
+            <RollDiceDisplay
+              dice={game.dice}
+              onRoll={canStartRoll
+                ? () => dispatch({ type: 'rollForStart' })
+                : canRoll ? () => dispatch({ type: 'rollDice' }) : undefined}
+            />
+          )}
             <ActionButton img={TRADE_ICON} label="Trade" onClick={() => setTradeOpen(true)} disabled={!inMain} />
             <ActionButton
               img={CARD_DEV_BACK}
@@ -272,12 +337,12 @@ function HumanDock({ game }: { game: GameState }) {
               disabled={!inMain || !canAfford(me.resources, COSTS.city) || me.stock.cities === 0}
             />
             <div className="mx-0.5 w-px self-stretch bg-black/10 dark:bg-white/15" />
-            {canRoll ? (
+            {canRoll || canStartRoll ? (
               <button
-                onClick={() => dispatch({ type: 'rollDice' })}
-                className={`${BTN_BASE} flex-1 animate-pulse bg-p-green px-4 text-base text-white shadow-soft hover:-translate-y-0.5 hover:brightness-105`}
+                onClick={() => dispatch({ type: canStartRoll ? 'rollForStart' : 'rollDice' })}
+                className={`${BTN_BASE} flex-1 bg-p-green px-4 text-base text-white shadow-soft hover:-translate-y-0.5 hover:brightness-105`}
               >
-                🎲<span className="ml-1 hidden sm:inline">Roll</span>
+                🎲<span className="ml-1 hidden sm:inline">{canStartRoll ? 'Roll for first' : 'Roll'}</span>
               </button>
             ) : (
               <button
@@ -304,6 +369,76 @@ function HumanDock({ game }: { game: GameState }) {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+function TurnCountdown({ game }: { game: GameState }) {
+  const humanId = useGame((s) => s.humanId);
+  const dispatch = useGame((s) => s.dispatch);
+  const humanMustAct = game.currentPlayer === humanId && game.phase !== 'discard';
+  const seconds = game.rules.turnTimer;
+  const [remaining, setRemaining] = useState<number>(seconds);
+  const gameRef = useRef(game);
+  gameRef.current = game;
+  const actionKey = `${game.phase}-${game.currentPlayer}-${game.turn}-${game.setup?.step ?? ''}-${game.setup?.lastSettlement ?? ''}-${game.pending.discards[humanId] ?? ''}`;
+
+  useEffect(() => {
+    if (!humanMustAct || game.phase === 'gameOver') return;
+    setRemaining(seconds);
+    const started = Date.now();
+    const interval = setInterval(() => {
+      const left = seconds - Math.floor((Date.now() - started) / 1000);
+      setRemaining(Math.max(0, left));
+      if (left <= 0) {
+        clearInterval(interval);
+        const current = gameRef.current;
+        if (current.phase === 'main') dispatch({ type: 'endTurn' });
+        else {
+          const action = nextBotAction(current, humanId);
+          if (action) dispatch(action);
+        }
+      }
+    }, 250);
+    return () => clearInterval(interval);
+  }, [actionKey, dispatch, humanId, humanMustAct, seconds]);
+
+  if (!humanMustAct || game.phase === 'gameOver') return null;
+  return (
+    <span className={`ml-1 rounded-lg px-2 py-1 text-xs font-extrabold tabular-nums ${remaining <= 5 ? 'bg-p-red text-white' : 'bg-card-alt text-ink'}`}>
+      {remaining}s
+    </span>
+  );
+}
+
+function RollDiceDisplay({ dice, onRoll }: { dice: [number, number] | null; onRoll?: () => void }) {
+  const faces: [number, number] = dice ?? [1, 6];
+  return (
+    <button
+      type="button"
+      onClick={onRoll}
+      disabled={!onRoll}
+      className={`absolute -top-16 right-3 flex items-end gap-1.5 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 ${
+        onRoll ? 'cursor-pointer transition hover:scale-105 active:scale-95' : 'cursor-default'
+      }`}
+      aria-label={dice ? `Rolled ${dice[0]} and ${dice[1]}` : 'Dice ready to roll'}
+    >
+      {faces.map((value, index) => (
+        <motion.img
+          key={`${index}-${value}`}
+          src={diceAsset(value)}
+          alt=""
+          draggable={false}
+          initial={dice ? { rotate: -25, scale: 0.5 } : undefined}
+          animate={dice
+            ? { rotate: 0, scale: 1, y: 0 }
+            : { rotate: index === 0 ? -8 : 8, y: index === 0 ? 1 : -1 }}
+          transition={dice
+            ? { type: 'spring', stiffness: 320, damping: 17 }
+            : { repeat: Infinity, repeatType: 'reverse', duration: 0.7, ease: 'easeInOut' }}
+          className="h-14 w-14 drop-shadow-lg"
+        />
+      ))}
+    </button>
   );
 }
 
@@ -343,7 +478,7 @@ type DiscardCtl = { sel: Bag; onToggle: (r: Resource, delta: number) => void };
 function ResourceHand({ me, discard }: { me: Player; discard?: DiscardCtl }) {
   const present = RESOURCES.filter((r) => me.resources[r] > 0);
   if (present.length === 0) {
-    return <span className="px-2 py-3 text-sm font-semibold text-ink-faint">No resources</span>;
+    return <span className="w-full text-center text-sm font-semibold text-ink-faint">No resources</span>;
   }
   return (
     <>
@@ -538,7 +673,7 @@ function VictoryOverlay({ game }: { game: GameState }) {
         <h2 className="font-display text-3xl font-extrabold" style={{ color: PLAYER_CSS[winner.color] }}>{winner.name} wins!</h2>
         <p className="mb-6 mt-1 text-ink-soft">{victoryPoints(game, winner.id)} victory points</p>
         <button
-          onClick={() => newGame({ players: game.players.map((p) => ({ name: p.name, isBot: p.isBot })), layout: 'random' })}
+          onClick={() => newGame({ players: game.players.map((p) => ({ name: p.name, isBot: p.isBot })), layout: 'random', rules: game.rules })}
           className={`${BTN_BASE} bg-p-green px-6 py-3 text-lg text-white hover:-translate-y-0.5 hover:brightness-105`}
         >
           Play again
@@ -581,10 +716,11 @@ function Overlay({ children }: { children: React.ReactNode }) {
 }
 
 const PHASE_LABEL: Record<GameState['phase'], string> = {
-  setup: 'Placing pieces',
-  roll: 'Roll the dice',
-  discard: 'Discarding',
-  moveRobber: 'Move the robber',
+  startingRoll: 'First roll',
+  setup: 'Setup',
+  roll: 'Roll dice',
+  discard: 'Discard cards',
+  moveRobber: 'Move robber',
   main: 'Build & trade',
   gameOver: 'Game over',
 };

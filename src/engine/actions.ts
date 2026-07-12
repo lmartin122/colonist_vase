@@ -6,6 +6,8 @@ import type { Resource } from './types';
  * player; `discard` is the exception (any player who owes a discard).
  */
 export type Action =
+  // Determine who places first
+  | { type: 'rollForStart' }
   // Setup (snake draft)
   | { type: 'placeSetupSettlement'; vertex: number }
   | { type: 'placeSetupRoad'; edge: number }

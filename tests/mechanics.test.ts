@@ -26,6 +26,7 @@ function edgeAt(s: GameState, vertex: number): number {
   return s.board.vertices[vertex].edgeIds.find((e) => s.roads[e] === undefined)!;
 }
 function autoSetup(s: GameState): GameState {
+  while (s.phase === 'startingRoll') s = applyOrThrow(s, { type: 'rollForStart' });
   while (s.phase === 'setup') {
     const v = firstOpenVertex(s);
     s = applyOrThrow(s, { type: 'placeSetupSettlement', vertex: v });
@@ -64,6 +65,27 @@ describe('bank trading', () => {
   });
 });
 
+describe('game rules', () => {
+  it('stores custom timer, victory, discard, and visibility rules in game state', () => {
+    const s = createGame({
+      players: [{ name: 'A', isBot: false }, { name: 'B', isBot: true }],
+      seed: 4,
+      rules: { turnTimer: 15, victoryPoints: 14, discardLimit: 9, hideBankCards: true, friendlyRobber: true },
+    });
+    expect(s.rules).toMatchObject({ turnTimer: 15, victoryPoints: 14, discardLimit: 9, hideBankCards: true, friendlyRobber: true });
+  });
+
+  it('rejects direct player trades when that rule is disabled', () => {
+    let s = autoSetup(game());
+    const actor = s.currentPlayer;
+    const partner = s.turnOrder.find((id) => id !== actor)!;
+    s = setRes(s, actor, { wood: 1 });
+    s = setRes(s, partner, { brick: 1 });
+    s = { ...s, phase: 'main', rules: { ...s.rules, allowPlayerTrades: false } };
+    expect(reduce(s, { type: 'playerTrade', partner, give: { wood: 1 }, receive: { brick: 1 } }).ok).toBe(false);
+  });
+});
+
 describe('monopoly', () => {
   it('takes the named resource from every opponent', () => {
     let s = autoSetup(game());
@@ -95,6 +117,17 @@ describe('robber', () => {
     expect(totalResources(res.players[0].resources)).toBe(before + 1);
     expect(totalResources(res.players[1].resources)).toBe(2);
     expect(res.phase).toBe('main');
+  });
+
+  it('protects players below 3 VP with Friendly Robber', () => {
+    let s = autoSetup(game(9));
+    const victim = 1;
+    s = setRes(s, victim, { sheep: 1 });
+    const victimVertex = Number(Object.keys(s.buildings).find((v) => s.buildings[Number(v)].owner === victim));
+    const tile = s.board.vertices[victimVertex].tileIds.find((t) => t !== s.board.robberTileId)!;
+    s = { ...s, phase: 'moveRobber', currentPlayer: 0, rules: { ...s.rules, friendlyRobber: true } };
+    expect(reduce(s, { type: 'moveRobber', tile, stealFrom: victim }).ok).toBe(false);
+    expect(reduce(s, { type: 'moveRobber', tile, stealFrom: null }).ok).toBe(true);
   });
 });
 

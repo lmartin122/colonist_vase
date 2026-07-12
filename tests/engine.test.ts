@@ -31,6 +31,7 @@ function edgeAt(state: GameState, vertex: number): number {
 /** Run the whole snake-draft setup with legal (greedy) placements. */
 function autoSetup(state: GameState): GameState {
   let s = state;
+  while (s.phase === 'startingRoll') s = applyOrThrow(s, { type: 'rollForStart' });
   while (s.phase === 'setup') {
     const v = firstOpenVertex(s);
     s = applyOrThrow(s, { type: 'placeSetupSettlement', vertex: v });
@@ -40,21 +41,38 @@ function autoSetup(state: GameState): GameState {
 }
 
 describe('setup phase', () => {
-  it('follows the snake-draft order and ends on player 0 to roll', () => {
+  it('rolls for first, follows the resulting snake order, and returns to the winner', () => {
     let s = newGame();
-    expect(s.phase).toBe('setup');
+    expect(s.phase).toBe('startingRoll');
     expect(s.currentPlayer).toBe(0);
+    while (s.phase === 'startingRoll') s = applyOrThrow(s, { type: 'rollForStart' });
+    expect(s.phase).toBe('setup');
+    const first = s.currentPlayer;
+    expect(s.setup?.order[0]).toBe(first);
+    expect(s.turnOrder[0]).toBe(first);
     s = autoSetup(s);
     expect(s.phase).toBe('roll');
-    expect(s.currentPlayer).toBe(0);
+    expect(s.currentPlayer).toBe(first);
     expect(s.turn).toBe(1);
+    const nextTurn = applyOrThrow({ ...s, phase: 'main' }, { type: 'endTurn' });
+    expect(nextTurn.currentPlayer).toBe(s.turnOrder[1]);
     // Each player placed 2 settlements + 2 roads.
     expect(Object.keys(s.buildings)).toHaveLength(4);
     expect(Object.keys(s.roads)).toHaveLength(4);
   });
 
+  it('reproduces the same starting player and setup order for the same seed', () => {
+    const resolve = () => {
+      let s = newGame(77);
+      while (s.phase === 'startingRoll') s = applyOrThrow(s, { type: 'rollForStart' });
+      return { player: s.currentPlayer, order: s.setup?.order };
+    };
+    expect(resolve()).toEqual(resolve());
+  });
+
   it('rejects a settlement too close to another', () => {
     let s = newGame();
+    while (s.phase === 'startingRoll') s = applyOrThrow(s, { type: 'rollForStart' });
     const v = firstOpenVertex(s);
     s = applyOrThrow(s, { type: 'placeSetupSettlement', vertex: v });
     s = applyOrThrow(s, { type: 'placeSetupRoad', edge: edgeAt(s, v) });
@@ -65,6 +83,7 @@ describe('setup phase', () => {
 
   it('grants resources for the second settlement only', () => {
     let s = newGame();
+    while (s.phase === 'startingRoll') s = applyOrThrow(s, { type: 'rollForStart' });
     // First placement: no resources yet.
     const v0 = firstOpenVertex(s);
     s = applyOrThrow(s, { type: 'placeSetupSettlement', vertex: v0 });
@@ -112,9 +131,9 @@ describe('building', () => {
         s = applyOrThrow(s, { type: 'discard', player: Number(pid), resources: pickDiscard(s, Number(pid), n) });
       }
     }
-    // Grant resources directly for a deterministic build.
-    s = giveResources(s, 0, { wood: 1, brick: 1 });
     const player = s.currentPlayer;
+    // Grant resources directly to the rolled starting player for a deterministic build.
+    s = giveResources(s, player, { wood: 1, brick: 1 });
     const myRoadEdge = Number(Object.keys(s.roads).find((e) => s.roads[Number(e)] === player));
     const settlementVertex = s.board.edges[myRoadEdge].vertexIds[0];
     const newEdge = s.board.vertices[settlementVertex].edgeIds.find((e) => s.roads[e] === undefined)!;

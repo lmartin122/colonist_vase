@@ -1,9 +1,7 @@
 import type { Action, ReduceResult } from './actions';
 import {
   COSTS,
-  DISCARD_LIMIT,
   LARGEST_ARMY_MIN,
-  WIN_POINTS,
 } from './constants';
 import { rollDie, nextInt } from './rng';
 import { updateLongestRoad } from './longestRoad';
@@ -51,6 +49,8 @@ function apply(state: GameState, action: Action): GameState {
   if (state.phase === 'gameOver') fail('Game is over');
 
   switch (action.type) {
+    case 'rollForStart':
+      return rollForStart(state);
     case 'placeSetupSettlement':
       return placeSetupSettlement(state, action.vertex);
     case 'placeSetupRoad':
@@ -84,6 +84,63 @@ function apply(state: GameState, action: Action): GameState {
     case 'endTurn':
       return endTurn(state);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Starting order roll
+// ---------------------------------------------------------------------------
+
+function rollForStart(state: GameState): GameState {
+  if (state.phase !== 'startingRoll' || !state.startingRoll) fail('Not rolling for starting order');
+  const actor = state.currentPlayer;
+  if (!state.startingRoll.contenders.includes(actor)) fail('Player is not in the current roll-off');
+  if (state.startingRoll.rolls[actor]) fail('Player already rolled in this round');
+
+  const d1 = rollDie(state.rng);
+  const d2 = rollDie(d1.rng);
+  const dice: [number, number] = [d1.value, d2.value];
+  const rolls = { ...state.startingRoll.rolls, [actor]: dice };
+  let next = log(
+    { ...state, rng: d2.rng, dice, startingRoll: { ...state.startingRoll, rolls } },
+    `${playerName(state, actor)} rolled ${dice[0] + dice[1]} for starting order`,
+    actor,
+  );
+
+  const waiting = state.startingRoll.contenders.filter((id) => !rolls[id]);
+  if (waiting.length > 0) return { ...next, currentPlayer: waiting[0] };
+
+  const best = Math.max(...state.startingRoll.contenders.map((id) => {
+    const roll = rolls[id]!;
+    return roll[0] + roll[1];
+  }));
+  const leaders = state.startingRoll.contenders.filter((id) => {
+    const roll = rolls[id]!;
+    return roll[0] + roll[1] === best;
+  });
+
+  if (leaders.length > 1) {
+    next = {
+      ...next,
+      currentPlayer: leaders[0],
+      dice: null,
+      startingRoll: { contenders: leaders, rolls: {} },
+    };
+    return log(next, `Tie for first between ${leaders.map((id) => playerName(next, id)).join(', ')}. Roll again!`, null);
+  }
+
+  const first = leaders[0];
+  const forward = Array.from({ length: state.players.length }, (_, offset) => (first + offset) % state.players.length);
+  const order = [...forward, ...forward.slice().reverse()];
+  next = {
+    ...next,
+    currentPlayer: first,
+    turnOrder: forward,
+    phase: 'setup',
+    dice: null,
+    startingRoll: null,
+    setup: { order, step: 0, lastSettlement: null },
+  };
+  return log(next, `${playerName(next, first)} won the roll and places first!`, first);
 }
 
 // ---------------------------------------------------------------------------
@@ -212,7 +269,7 @@ function beginRobber(state: GameState): GameState {
   const discards: Record<number, number> = {};
   state.players.forEach((p) => {
     const total = totalResources(p.resources);
-    if (total > DISCARD_LIMIT) discards[p.id] = Math.floor(total / 2);
+    if (total > state.rules.discardLimit) discards[p.id] = Math.floor(total / 2);
   });
   if (Object.keys(discards).length > 0) {
     return { ...state, phase: 'discard', pending: { ...state.pending, discards } };
@@ -292,7 +349,11 @@ function applyRobber(
   const occupants = new Set<number>();
   for (const vid of state.board.tiles[tile].vertexIds) {
     const b = state.buildings[vid];
-    if (b && b.owner !== actor && totalResources(state.players[b.owner].resources) > 0) {
+    if (
+      b && b.owner !== actor &&
+      (!state.rules.friendlyRobber || victoryPoints(state, b.owner) >= 3) &&
+      totalResources(state.players[b.owner].resources) > 0
+    ) {
       occupants.add(b.owner);
     }
   }
@@ -511,6 +572,7 @@ function playerTrade(
   give: Partial<Record<Resource, number>>,
   receive: Partial<Record<Resource, number>>,
 ): GameState {
+  if (!state.rules.allowPlayerTrades) fail('Player trading is disabled');
   requireMain(state);
   const player = state.currentPlayer;
   if (partner === player) fail('Cannot trade with yourself');
@@ -544,7 +606,7 @@ function updateLargestArmy(state: GameState): GameState {
 
 function checkWin(state: GameState): GameState {
   const player = state.currentPlayer;
-  if (victoryPoints(state, player) >= WIN_POINTS) {
+  if (victoryPoints(state, player) >= state.rules.victoryPoints) {
     return log({ ...state, phase: 'gameOver', winner: player }, `${playerName(state, player)} wins!`);
   }
   return state;
@@ -552,7 +614,8 @@ function checkWin(state: GameState): GameState {
 
 function endTurn(state: GameState): GameState {
   if (state.phase !== 'main') fail('Cannot end turn now');
-  const nextPlayer = (state.currentPlayer + 1) % state.players.length;
+  const currentIndex = state.turnOrder.indexOf(state.currentPlayer);
+  const nextPlayer = state.turnOrder[(currentIndex + 1) % state.turnOrder.length];
   return {
     ...state,
     currentPlayer: nextPlayer,
