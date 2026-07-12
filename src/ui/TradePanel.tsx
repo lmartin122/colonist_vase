@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
+import { RESOURCE_CARD } from '../assets';
 import { bestTradePartner } from '../ai/bot';
 import { bankTradeRatio } from '../engine/helpers';
 import type { GameState, Resource } from '../engine/types';
 import { RESOURCES } from '../engine/types';
 import { useGame } from '../state/store';
-import { ResourceIcon } from './ResourceIcon';
 
 type Bag = Record<Resource, number>;
 const zeroBag = (): Bag => ({ wood: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 });
@@ -59,7 +59,10 @@ function BankTrade({ game, onClose }: { game: GameState; onClose: () => void }) 
         <ResourcePick label="Get" value={get} onChange={setGet} game={game} humanId={humanId} />
       </div>
       <div className="mb-4 flex items-center justify-center gap-1.5 text-sm text-ink-soft">
-        Give <b className="text-ink">{ratio}</b> <ResourceIcon resource={give} size={16} /> for <b className="text-ink">1</b> <ResourceIcon resource={get} size={16} />
+        Give <b className="text-ink">{ratio}</b>
+        <img src={RESOURCE_CARD[give]} alt={give} className="inline-block w-3.5 rounded-[3px] align-middle" draggable={false} />
+        for <b className="text-ink">1</b>
+        <img src={RESOURCE_CARD[get]} alt={get} className="inline-block w-3.5 rounded-[3px] align-middle" draggable={false} />
       </div>
       <button disabled={!affordable} onClick={() => { dispatch({ type: 'bankTrade', give, receive: get }); onClose(); }} className={`${BTN} w-full px-4 py-3 ${affordable ? 'bg-p-green text-white hover:brightness-105' : 'bg-card-alt text-ink-faint'}`}>
         Trade
@@ -74,15 +77,15 @@ function ResourcePick({ label, value, onChange, game, humanId, showRatio }: {
   return (
     <div className="text-center">
       <div className="mb-1 text-xs font-bold uppercase tracking-wide text-ink-faint">{label}</div>
-      <div className="flex gap-1">
+      <div className="flex gap-1.5">
         {RESOURCES.map((r) => (
           <button
             key={r}
             onClick={() => onChange(r)}
             title={showRatio ? `rate ${bankTradeRatio(game, humanId, r)}:1` : undefined}
-            className={`flex h-10 w-10 items-center justify-center rounded-xl transition sm:h-11 sm:w-11 ${value === r ? 'bg-amber-300 shadow-soft' : 'bg-card-alt hover:-translate-y-0.5'}`}
+            className={`rounded-xl p-1 transition ${value === r ? 'bg-amber-300 shadow-soft' : 'bg-card-alt hover:-translate-y-0.5'}`}
           >
-            <ResourceIcon resource={r} size={22} />
+            <img src={RESOURCE_CARD[r]} alt={r} className="h-14 w-10 rounded-md object-contain" draggable={false} />
           </button>
         ))}
       </div>
@@ -129,7 +132,7 @@ function BagEditor({ label, bag, setBag, max }: { label: string; bag: Bag; setBa
       <div className="grid grid-cols-5 gap-2">
         {RESOURCES.map((r) => (
           <div key={r} className="flex flex-col items-center rounded-xl bg-card-alt p-1.5">
-            <ResourceIcon resource={r} size={22} />
+            <img src={RESOURCE_CARD[r]} alt={r} className="h-14 w-10 rounded-md object-contain" draggable={false} />
             <div className="mt-1 flex items-center gap-1">
               <button className="h-5 w-5 rounded-md bg-ink/10 text-xs font-bold hover:bg-ink/20 active:scale-90" onClick={() => adjust(r, -1)}>−</button>
               <span className="w-4 text-center text-sm font-extrabold">{bag[r]}</span>

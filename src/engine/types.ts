@@ -64,7 +64,7 @@ export interface Board {
 // ---------------------------------------------------------------------------
 
 export type BuildingType = 'settlement' | 'city';
-export type PlayerColor = 'blue' | 'red' | 'green' | 'purple';
+export type PlayerColor = 'red' | 'blue' | 'orange' | 'green';
 
 export interface Building {
   type: BuildingType;

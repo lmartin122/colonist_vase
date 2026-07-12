@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Application } from 'pixi.js';
 import type { Board } from '../engine/types';
 import { BoardRenderer } from '../render/BoardRenderer';
+import { loadBoardTextures } from '../render/textures';
 import { deriveInteraction } from '../state/interaction';
 import { useGame } from '../state/store';
 
@@ -43,7 +44,12 @@ export function GameCanvas() {
       }
       app = instance;
       host.appendChild(app.canvas);
-      const renderer = new BoardRenderer(app);
+      const textures = await loadBoardTextures();
+      if (disposed) {
+        instance.destroy(true);
+        return;
+      }
+      const renderer = new BoardRenderer(app, textures);
       rendererRef.current = renderer;
       app.renderer.on('resize', () => renderer.fit());
       setReady(true);
@@ -75,5 +81,6 @@ export function GameCanvas() {
     renderer.setInteraction(deriveInteraction(game, build, humanId, dispatch));
   }, [game, build, humanId, dispatch, ready]);
 
-  return <div ref={hostRef} className="absolute inset-0" />;
+  // Leave room for the right sidebar on md+ so the board centers in the play area.
+  return <div ref={hostRef} className="absolute inset-y-0 left-0 right-0 md:right-[300px] lg:right-[330px]" />;
 }

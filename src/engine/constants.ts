@@ -36,7 +36,7 @@ export const DEV_DECK: DevCardType[] = [
   ...Array<DevCardType>(2).fill('yearOfPlenty'),
 ];
 
-export const PLAYER_COLORS = ['blue', 'red', 'green', 'purple'] as const;
+export const PLAYER_COLORS = ['red', 'blue', 'orange', 'green'] as const;
 
 /** Number of "pips" (probability dots) printed on each dice number token. */
 export const NUMBER_PIPS: Record<number, number> = {

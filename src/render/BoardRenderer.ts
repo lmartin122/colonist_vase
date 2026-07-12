@@ -1,6 +1,9 @@
-import { Application, Circle, Container, FillGradient, Graphics, Text, TextStyle } from 'pixi.js';
-import type { Board, GameState, PortType, TileType } from '../engine/types';
+import { Application, Circle, Container, FillGradient, Graphics, Sprite, Text, TextStyle } from 'pixi.js';
+import type { Board, GameState, PlayerColor, PortType, TileType } from '../engine/types';
 import { NUMBER_PIPS } from '../engine/constants';
+import { HEX_ASSET, cityAsset, roadAsset, settlementAsset } from '../assets';
+import { HEX_SIZE, distance } from '../engine/coords';
+import type { TextureMap } from './textures';
 import {
   HIGHLIGHT,
   OCEAN,
@@ -51,10 +54,20 @@ export class BoardRenderer {
   private anims: Anim[] = [];
   private robberSprite: Container | null = null;
 
-  constructor(private readonly app: Application) {
+  constructor(
+    private readonly app: Application,
+    private readonly tex: TextureMap = {},
+  ) {
     this.view.addChild(this.water, this.tiles, this.ports, this.pieces, this.overlay);
     app.stage.addChild(this.view);
     app.ticker.add((t) => this.tick(t.deltaMS));
+  }
+
+  /** Build a sprite from a preloaded texture URL, or null if it isn't loaded. */
+  private sprite(url: string | null): Sprite | null {
+    if (!url) return null;
+    const texture = this.tex[url];
+    return texture ? new Sprite(texture) : null;
   }
 
   /** Build the static board (tiles, tokens, ports, water) once per game. */
@@ -101,22 +114,31 @@ export class BoardRenderer {
     shadow.position.set(0, 7);
     this.tiles.addChild(shadow);
 
-    // Tile with a subtle vertical gradient (lighter top → base).
-    const grad = new FillGradient({
-      type: 'linear',
-      start: { x: 0, y: 0 },
-      end: { x: 0, y: 1 },
-      colorStops: [
-        { offset: 0, color: TILE_COLORS_LIGHT[tile.type] },
-        { offset: 1, color: TILE_COLORS[tile.type] },
-      ],
-      textureSpace: 'local',
-    });
-    const g = new Graphics();
-    g.poly(pts).fill(grad).stroke({ width: 3, color: TILE_STROKE, alpha: 0.35 });
-    this.tiles.addChild(g);
+    const hexSprite = this.sprite(HEX_ASSET[tile.type]);
+    if (hexSprite) {
+      // SVG terrain art (includes the resource motif) scaled to the tile height.
+      hexSprite.anchor.set(0.5);
+      hexSprite.scale.set((HEX_SIZE * 2) / hexSprite.texture.height);
+      hexSprite.position.set(cx, cy);
+      this.tiles.addChild(hexSprite);
+    } else {
+      // Fallback for tiles without art (ore, desert): gradient + drawn motif.
+      const grad = new FillGradient({
+        type: 'linear',
+        start: { x: 0, y: 0 },
+        end: { x: 0, y: 1 },
+        colorStops: [
+          { offset: 0, color: TILE_COLORS_LIGHT[tile.type] },
+          { offset: 1, color: TILE_COLORS[tile.type] },
+        ],
+        textureSpace: 'local',
+      });
+      const g = new Graphics();
+      g.poly(pts).fill(grad).stroke({ width: 3, color: TILE_STROKE, alpha: 0.35 });
+      this.tiles.addChild(g);
+      this.drawTerrainMotif(tile.type, cx, cy - 20);
+    }
 
-    this.drawTerrainMotif(tile.type, cx, cy - 20);
     if (tile.number !== null) this.drawToken(cx, cy + 26, tile.number);
   }
 
@@ -254,7 +276,7 @@ export class BoardRenderer {
     for (const [edgeStr, owner] of Object.entries(state.roads)) {
       const edge = board.edges[Number(edgeStr)];
       const [a, b] = edge.vertexIds.map((v) => board.vertices[v].point);
-      const road = this.buildRoad(a, b, PLAYER_HEX[state.players[owner].color]);
+      const road = this.buildRoad(a, b, state.players[owner].color);
       this.pieces.addChild(road);
       this.animateIfNew(this.seenRoads, Number(edgeStr), road);
     }
@@ -262,7 +284,7 @@ export class BoardRenderer {
     // Buildings
     for (const [vStr, building] of Object.entries(state.buildings)) {
       const p = board.vertices[Number(vStr)].point;
-      const color = PLAYER_HEX[state.players[building.owner].color];
+      const color = state.players[building.owner].color;
       const piece = building.type === 'city' ? this.buildCity(p, color) : this.buildSettlement(p, color);
       this.pieces.addChild(piece);
       this.animateIfNew(this.seenBuildings, Number(vStr), piece);
@@ -275,52 +297,62 @@ export class BoardRenderer {
     this.pieces.addChild(this.robberSprite);
   }
 
-  private buildRoad(a: { x: number; y: number }, b: { x: number; y: number }, color: number): Container {
+  private buildRoad(a: { x: number; y: number }, b: { x: number; y: number }, color: PlayerColor): Container {
     const c = new Container();
-    const g = new Graphics();
-    // Inset from the vertices so roads read as segments, not full spans.
-    const ax = a.x + (b.x - a.x) * 0.18;
-    const ay = a.y + (b.y - a.y) * 0.18;
-    const bx = b.x + (a.x - b.x) * 0.18;
-    const by = b.y + (a.y - b.y) * 0.18;
-    g.moveTo(ax, ay + 3).lineTo(bx, by + 3).stroke({ width: 14, color: 0x0a1a24, alpha: 0.25, cap: 'round' });
-    g.moveTo(ax, ay).lineTo(bx, by).stroke({ width: 13, color: darken(color, 0.65), cap: 'round' });
-    g.moveTo(ax, ay).lineTo(bx, by).stroke({ width: 9, color, cap: 'round' });
-    g.moveTo(ax, ay - 1.5).lineTo(bx, by - 1.5).stroke({ width: 3, color: lighten(color, 0.4), alpha: 0.7, cap: 'round' });
-    c.addChild(g);
-    c.pivot.set((ax + bx) / 2, (ay + by) / 2);
-    c.position.set((ax + bx) / 2, (ay + by) / 2);
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const angle = Math.atan2(b.y - a.y, b.x - a.x);
+    const edgeLen = distance(a, b);
+
+    const sprite = this.sprite(roadAsset(color));
+    if (sprite) {
+      sprite.anchor.set(0.5);
+      // Road art is a vertical bar; align its long axis with the edge.
+      sprite.scale.set((edgeLen * 0.92) / sprite.texture.height);
+      sprite.rotation = angle - Math.PI / 2;
+      c.addChild(sprite);
+    } else {
+      const hex = PLAYER_HEX[color];
+      const g = new Graphics();
+      const ax = a.x + (b.x - a.x) * 0.18, ay = a.y + (b.y - a.y) * 0.18;
+      const bx = b.x + (a.x - b.x) * 0.18, by = b.y + (a.y - b.y) * 0.18;
+      g.moveTo(ax, ay).lineTo(bx, by).stroke({ width: 13, color: darken(hex, 0.65), cap: 'round' });
+      g.moveTo(ax, ay).lineTo(bx, by).stroke({ width: 9, color: hex, cap: 'round' });
+      g.pivot.set(mid.x, mid.y);
+      c.addChild(g);
+    }
+    c.position.set(mid.x, mid.y);
     return c;
   }
 
-  private buildSettlement(p: { x: number; y: number }, color: number): Container {
-    const c = new Container();
-    const g = new Graphics();
-    const s = 15;
-    g.ellipse(0, s + 3, 15, 5).fill({ color: 0x0a1a24, alpha: 0.25 }); // ground shadow
-    const shape = [-s, s, -s, -s * 0.2, 0, -s, s, -s * 0.2, s, s];
-    g.poly(shape).fill(darken(color, 0.7));
-    g.poly(shape).fill(color).stroke({ width: 2, color: darken(color, 0.55) });
-    // Roof highlight.
-    g.poly([-s, -s * 0.2, 0, -s, s, -s * 0.2, 0, -s * 0.05]).fill({ color: lighten(color, 0.35), alpha: 0.6 });
-    c.addChild(g);
-    c.position.set(p.x, p.y);
-    return c;
+  private buildSettlement(p: { x: number; y: number }, color: PlayerColor): Container {
+    return this.buildPiece(p, this.sprite(settlementAsset(color)), color, 'settlement');
   }
 
-  private buildCity(p: { x: number; y: number }, color: number): Container {
+  private buildCity(p: { x: number; y: number }, color: PlayerColor): Container {
+    return this.buildPiece(p, this.sprite(cityAsset(color)), color, 'city');
+  }
+
+  private buildPiece(
+    p: { x: number; y: number },
+    sprite: Sprite | null,
+    color: PlayerColor,
+    kind: 'settlement' | 'city',
+  ): Container {
     const c = new Container();
-    const g = new Graphics();
-    const s = 20;
-    g.ellipse(0, s + 1, 22, 6).fill({ color: 0x0a1a24, alpha: 0.25 }); // ground shadow
-    g.roundRect(-s, -2, s * 2, s, 3).fill(color).stroke({ width: 2, color: darken(color, 0.55) });
-    const tower = [-s, -2, -s, -s * 0.6, -s * 0.2, -s, s * 0.4, -s * 0.6, s * 0.4, -2];
-    g.poly(tower).fill(color).stroke({ width: 2, color: darken(color, 0.55) });
-    // Highlights for depth.
-    g.roundRect(-s + 3, 1, s * 2 - 6, 4, 2).fill({ color: lighten(color, 0.4), alpha: 0.5 });
-    g.circle(s * 0.55, 6, 2.2).fill(darken(color, 0.5));
-    g.circle(s * 0.85, 6, 2.2).fill(darken(color, 0.5));
-    c.addChild(g);
+    if (sprite) {
+      const target = kind === 'city' ? 54 : 46;
+      sprite.anchor.set(0.5, 0.58); // base sits near the vertex
+      sprite.scale.set(target / sprite.texture.height);
+      c.addChild(sprite);
+    } else {
+      const hex = PLAYER_HEX[color];
+      const g = new Graphics();
+      const s = kind === 'city' ? 20 : 15;
+      g.ellipse(0, s + 3, s, 5).fill({ color: 0x0a1a24, alpha: 0.25 });
+      const shape = [-s, s, -s, -s * 0.2, 0, -s, s, -s * 0.2, s, s];
+      g.poly(shape).fill(hex).stroke({ width: 2, color: darken(hex, 0.55) });
+      c.addChild(g);
+    }
     c.position.set(p.x, p.y);
     return c;
   }
@@ -420,15 +452,6 @@ export class BoardRenderer {
 /** Mix a color toward black by `amount` (0..1 keeps more of the original). */
 function darken(hex: number, amount: number): number {
   return scale(hex, amount);
-}
-
-/** Mix a color toward white by `amount`. */
-function lighten(hex: number, amount: number): number {
-  const r = (hex >> 16) & 0xff;
-  const g = (hex >> 8) & 0xff;
-  const b = hex & 0xff;
-  const mix = (c: number) => Math.round(c + (255 - c) * amount);
-  return (mix(r) << 16) | (mix(g) << 8) | mix(b);
 }
 
 function scale(hex: number, factor: number): number {

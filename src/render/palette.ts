@@ -41,17 +41,17 @@ export const TILE_GLYPH: Record<TileType, string> = {
 };
 
 export const PLAYER_HEX: Record<PlayerColor, number> = {
-  blue: 0x3b82f6,
-  red: 0xe4572e,
-  green: 0x2fa85a,
-  purple: 0x8b5cf6,
+  red: 0xd6402f,
+  blue: 0x2e7be4,
+  orange: 0xe8862a,
+  green: 0x3c9e4e,
 };
 
 export const PLAYER_CSS: Record<PlayerColor, string> = {
-  blue: '#3B82F6',
-  red: '#E4572E',
-  green: '#2FA85A',
-  purple: '#8B5CF6',
+  red: '#D6402F',
+  blue: '#2E7BE4',
+  orange: '#E8862A',
+  green: '#3C9E4E',
 };
 
 export const OCEAN = 0x2e6e96;
