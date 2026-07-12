@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Application } from 'pixi.js';
 import type { Board } from '../engine/types';
 import { BoardRenderer } from '../render/BoardRenderer';
+import { setTileLocator } from '../render/boardAnchors';
 import { loadBoardTextures } from '../render/textures';
 import { deriveInteraction } from '../state/interaction';
 import { useGame } from '../state/store';
@@ -51,6 +52,7 @@ export function GameCanvas() {
       }
       const renderer = new BoardRenderer(app, textures);
       rendererRef.current = renderer;
+      setTileLocator((id) => renderer.tileClientPosition(id));
       app.renderer.on('resize', () => renderer.fit());
       setReady(true);
     })();
@@ -59,6 +61,7 @@ export function GameCanvas() {
       disposed = true;
       rendererRef.current = null;
       lastBoard.current = null;
+      setTileLocator(null);
       if (app) app.destroy(true, { children: true });
     };
   }, []);

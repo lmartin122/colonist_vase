@@ -7,6 +7,7 @@ import type { DevCardType, GameState, Player, Resource } from '../engine/types';
 import { RESOURCES } from '../engine/types';
 import { PLAYER_CSS } from '../render/palette';
 import { useGame } from '../state/store';
+import { CardFlights } from './CardFlights';
 import { Sidebar } from './Sidebar';
 import { TradePanel } from './TradePanel';
 
@@ -45,6 +46,7 @@ export function Hud() {
       <Sidebar game={game} />
       <VictoryOverlay game={game} />
       <ErrorToast />
+      <CardFlights />
     </div>
   );
 }
@@ -126,6 +128,7 @@ function PlayerCard({ game, player, isHuman, active }: { game: GameState; player
   const color = PLAYER_CSS[player.color];
   return (
     <motion.div
+      data-player={player.id}
       animate={{ scale: active ? 1 : 0.98, opacity: active ? 1 : 0.9 }}
       transition={{ duration: 0.2 }}
       className={`relative overflow-hidden px-3 py-2 sm:py-2.5 ${CARD}`}
@@ -212,8 +215,11 @@ function HumanDock({ game }: { game: GameState }) {
       return { ...prev, [r]: prev[r] - 1 };
     });
 
+  // The dock fills the play area: inventory 1/3, action menu 2/3.
+  const menuVisible = inMain || canRoll;
+
   return (
-    <div className="pointer-events-auto absolute bottom-2 left-1/2 flex max-w-[97vw] -translate-x-1/2 flex-col items-center gap-2 sm:bottom-3">
+    <div className="pointer-events-auto absolute bottom-2 left-0 right-0 flex flex-col items-center gap-2 px-2 sm:bottom-3 sm:px-3">
       {discarding && (
         <DiscardBanner
           selected={selectedTotal}
@@ -224,15 +230,18 @@ function HumanDock({ game }: { game: GameState }) {
       )}
       {myTurn && !discarding && <DevCardBar game={game} me={me} />}
 
-      <div className="flex items-stretch justify-center gap-2">
+      <div className={`flex w-full items-stretch gap-2 ${menuVisible ? '' : 'justify-center'}`}>
         {/* Resource hand — fanned cards, grouped by resource (click to discard) */}
-        <div className={`flex items-center gap-2 px-3 pb-2 pt-4 ${CARD} ${discarding ? 'ring-2 ring-amber-400' : ''}`}>
+        <div
+          data-hand-panel
+          className={`flex items-center gap-2 overflow-x-auto px-3 pb-2 pt-4 ${CARD} ${menuVisible ? 'basis-1/3' : ''} ${discarding ? 'ring-2 ring-amber-400' : ''}`}
+        >
           <ResourceHand me={me} discard={discarding ? { sel, onToggle: toggleDiscard } : undefined} />
         </div>
 
         {/* Action menu */}
-        {(inMain || canRoll) && (
-          <div className={`flex items-stretch gap-1.5 p-2 ${CARD}`}>
+        {menuVisible && (
+          <div className={`flex basis-2/3 items-stretch justify-between gap-1.5 p-2 ${CARD}`}>
             <ActionButton img={TRADE_ICON} label="Trade" onClick={() => setTradeOpen(true)} disabled={!inMain} />
             <ActionButton
               img={CARD_DEV_BACK}
@@ -269,7 +278,7 @@ function HumanDock({ game }: { game: GameState }) {
             {canRoll ? (
               <button
                 onClick={() => dispatch({ type: 'rollDice' })}
-                className={`${BTN_BASE} animate-pulse bg-p-green px-4 text-white shadow-soft hover:-translate-y-0.5 hover:brightness-105`}
+                className={`${BTN_BASE} flex-1 animate-pulse bg-p-green px-4 text-base text-white shadow-soft hover:-translate-y-0.5 hover:brightness-105`}
               >
                 🎲<span className="ml-1 hidden sm:inline">Roll</span>
               </button>
@@ -277,7 +286,7 @@ function HumanDock({ game }: { game: GameState }) {
               <button
                 disabled={!inMain}
                 onClick={() => dispatch({ type: 'endTurn' })}
-                className={`${BTN_BASE} px-4 ${inMain ? 'bg-p-green text-white shadow-soft hover:-translate-y-0.5 hover:brightness-105' : 'bg-card-alt text-ink-faint'}`}
+                className={`${BTN_BASE} flex-1 px-4 text-base ${inMain ? 'bg-p-green text-white shadow-soft hover:-translate-y-0.5 hover:brightness-105' : 'bg-card-alt text-ink-faint'}`}
               >
                 End<span className="ml-1 hidden sm:inline">Turn</span>
               </button>
@@ -345,6 +354,7 @@ function ResourceHand({ me, discard }: { me: Player; discard?: DiscardCtl }) {
       {present.map((r) => (
         <FannedStack
           key={r}
+          res={r}
           src={RESOURCE_CARD[r]}
           count={me.resources[r]}
           title={r}
@@ -356,16 +366,16 @@ function ResourceHand({ me, discard }: { me: Player; discard?: DiscardCtl }) {
   );
 }
 
-function FannedStack({ src, count, title, selected = 0, onToggle }: {
-  src: string; count: number; title: string; selected?: number; onToggle?: (delta: number) => void;
+function FannedStack({ src, count, title, res, selected = 0, onToggle }: {
+  src: string; count: number; title: string; res?: string; selected?: number; onToggle?: (delta: number) => void;
 }) {
-  const cardW = 34;
+  const cardW = 40;
   // Tighten the overlap as a pile grows so wide hands stay compact.
-  const offset = count > 6 ? Math.max(9, 84 / count) : 15;
+  const offset = count > 6 ? Math.max(11, 100 / count) : 18;
   const width = cardW + (count - 1) * offset;
   const clickable = !!onToggle;
   return (
-    <div className="relative shrink-0" style={{ width, height: 50 }} title={`${count} ${title}`}>
+    <div data-hand={res} className="relative shrink-0" style={{ width, height: 58 }} title={`${count} ${title}`}>
       {Array.from({ length: count }).map((_, i) => {
         const isSel = clickable && i >= count - selected;
         return (
@@ -412,7 +422,7 @@ function ActionButton({ img, label, cost, onClick, disabled, active }: {
       disabled={disabled}
       onClick={onClick}
       title={title}
-      className={`${BTN_BASE} flex-col gap-0.5 px-2 py-1.5 ${
+      className={`${BTN_BASE} flex-1 flex-col gap-0.5 px-2 py-1.5 ${
         active
           ? 'bg-amber-300 text-amber-950 shadow-soft'
           : disabled
@@ -420,7 +430,7 @@ function ActionButton({ img, label, cost, onClick, disabled, active }: {
             : 'bg-card-alt text-ink hover:-translate-y-0.5 hover:shadow-soft'
       }`}
     >
-      <img src={img} alt="" className={`h-7 w-7 object-contain ${disabled ? 'opacity-45' : ''}`} />
+      <img src={img} alt="" className={`h-9 w-9 object-contain ${disabled ? 'opacity-45' : ''}`} />
       {cost ? (
         <span className="leading-none"><Cost cost={cost} /></span>
       ) : (

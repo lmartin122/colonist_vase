@@ -4,6 +4,7 @@ import type { Action } from '../engine/actions';
 import { createGame, type GameConfig } from '../engine/game';
 import { reduce } from '../engine/reduce';
 import type { GameState } from '../engine/types';
+import { deriveFlights, emitFlights } from './flights';
 
 /** What the human is currently placing on the board (drives board highlights). */
 export type BuildMode =
@@ -101,6 +102,7 @@ export const useGame = create<Store>((set, get) => {
           continue;
         }
         set({ game: result.state });
+        emitFlights(deriveFlights(current, result.state, action, humanId));
       }
     } finally {
       botRunning = false;
@@ -130,6 +132,7 @@ export const useGame = create<Store>((set, get) => {
         return false;
       }
       set({ game: result.state, error: null, build: null });
+      emitFlights(deriveFlights(game, result.state, action, get().humanId));
       void runBots();
       return true;
     },

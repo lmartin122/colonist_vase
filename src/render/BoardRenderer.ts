@@ -340,14 +340,14 @@ export class BoardRenderer {
   ): Container {
     const c = new Container();
     if (sprite) {
-      const target = kind === 'city' ? 54 : 46;
+      const target = kind === 'city' ? 81 : 69; // +50% for stronger board presence
       sprite.anchor.set(0.5, 0.58); // base sits near the vertex
       sprite.scale.set(target / sprite.texture.height);
       c.addChild(sprite);
     } else {
       const hex = PLAYER_HEX[color];
       const g = new Graphics();
-      const s = kind === 'city' ? 20 : 15;
+      const s = kind === 'city' ? 30 : 23;
       g.ellipse(0, s + 3, s, 5).fill({ color: 0x0a1a24, alpha: 0.25 });
       const shape = [-s, s, -s, -s * 0.2, 0, -s, s, -s * 0.2, s, s];
       g.poly(shape).fill(hex).stroke({ width: 2, color: darken(hex, 0.55) });
@@ -415,6 +415,19 @@ export class BoardRenderer {
       g.on('pointertap', () => mode.onTile?.(tId));
       this.overlay.addChild(g);
     }
+  }
+
+  /** Where a tile's center currently sits in viewport (client) pixels. */
+  tileClientPosition(tileId: number): { x: number; y: number } | null {
+    if (!this.board) return null;
+    const t = this.board.tiles[tileId];
+    const s = this.view.scale.x;
+    const localX = t.center.x * s + this.view.position.x;
+    const localY = t.center.y * s + this.view.position.y;
+    const rect = this.app.canvas.getBoundingClientRect();
+    const sx = this.app.screen.width ? rect.width / this.app.screen.width : 1;
+    const sy = this.app.screen.height ? rect.height / this.app.screen.height : 1;
+    return { x: rect.left + localX * sx, y: rect.top + localY * sy };
   }
 
   /** Scale/translate the board container to fit the current screen. */

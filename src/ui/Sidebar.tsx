@@ -116,7 +116,9 @@ function BankSummary({ game }: { game: GameState }) {
       </div>
       <div className="flex flex-1 items-end justify-around">
         {RESOURCES.map((r) => (
-          <CardStack key={r} src={RESOURCE_CARD[r]} count={game.bank[r]} title={`${r}: ~${game.bank[r]}`} />
+          <div key={r} data-bank={r}>
+            <CardStack src={RESOURCE_CARD[r]} count={game.bank[r]} title={`${r}: ~${game.bank[r]}`} />
+          </div>
         ))}
         <CardStack src={CARD_DEV_BACK} count={game.devDeck.length} title={`dev cards: ${game.devDeck.length}`} />
       </div>
@@ -157,6 +159,7 @@ function PlayerPanel({ game, player, isHuman }: { game: GameState; player: Playe
 
   return (
     <div
+      data-player={player.id}
       className={`flex items-center gap-2 rounded-2xl px-2.5 py-2 shadow-panel ring-1 transition ${
         isHuman ? 'bg-card' : 'bg-card/90'
       } ${active ? 'ring-2' : 'ring-black/5 dark:ring-white/10'}`}
