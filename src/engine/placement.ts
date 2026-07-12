@@ -1,4 +1,5 @@
 import type { GameState } from './types';
+import { victoryPoints } from './helpers';
 
 /**
  * Placement legality predicates, shared by the reducer (to validate actions) and
@@ -71,7 +72,7 @@ export function stealableOpponents(state: GameState, tile: number, actor: number
   const victims = new Set<number>();
   for (const vid of state.board.tiles[tile].vertexIds) {
     const b = state.buildings[vid];
-    if (b && b.owner !== actor) {
+    if (b && b.owner !== actor && (!state.rules.friendlyRobber || victoryPoints(state, b.owner) >= 3)) {
       const total = Object.values(state.players[b.owner].resources).reduce((s, n) => s + n, 0);
       if (total > 0) victims.add(b.owner);
     }

@@ -6,7 +6,7 @@ import {
   STARTING_STOCK,
 } from './constants';
 import { shuffle, type RngState } from './rng';
-import type { GameState, Player, PlayerColor } from './types';
+import type { GameRules, GameState, Player, PlayerColor } from './types';
 import { emptyBank } from './types';
 
 export interface PlayerConfig {
@@ -18,7 +18,17 @@ export interface GameConfig {
   players: PlayerConfig[];
   layout?: BoardOptions['layout'];
   seed?: number;
+  rules?: Partial<GameRules>;
 }
+
+export const DEFAULT_RULES: GameRules = {
+  turnTimer: 60,
+  victoryPoints: 10,
+  discardLimit: 7,
+  hideBankCards: false,
+  friendlyRobber: false,
+  allowPlayerTrades: true,
+};
 
 /** Build the initial GameState, beginning with the roll for placement order. */
 export function createGame(config: GameConfig): GameState {
@@ -56,6 +66,7 @@ export function createGame(config: GameConfig): GameState {
     dice: null,
     turn: 0,
     rng,
+    rules: { ...DEFAULT_RULES, ...config.rules },
     buildings: {},
     roads: {},
     longestRoad: { player: null, length: 0 },

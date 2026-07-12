@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CARD_DEV_BACK, RESOURCE_CARD, TRADE_ICON, cityAsset, diceAsset, roadAsset, settlementAsset } from '../assets';
+import { nextBotAction } from '../ai/bot';
 import { COSTS } from '../engine/constants';
 import { canAfford, publicVictoryPoints, totalResources, victoryPoints } from '../engine/helpers';
 import type { DevCardType, GameState, Player, Resource } from '../engine/types';
@@ -10,9 +11,6 @@ import { useGame } from '../state/store';
 import { CardFlights } from './CardFlights';
 import { Sidebar } from './Sidebar';
 import { TradePanel } from './TradePanel';
-
-/** Seconds a player has to discard before cards are dropped at random. */
-const DISCARD_SECONDS = 20;
 
 type Bag = Record<Resource, number>;
 const zeroBag = (): Bag => ({ wood: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 });
@@ -83,6 +81,7 @@ function TopBar({ game }: { game: GameState }) {
         <span className="font-display text-sm font-extrabold sm:text-base">{active.name}</span>
         <span className="text-ink-faint">·</span>
         <span className="text-xs text-ink-soft sm:text-sm">{PHASE_LABEL[game.phase]}</span>
+        <TurnCountdown game={game} />
         {thinking && <span className="ml-0.5 animate-pulse text-[11px] text-ink-faint">thinking…</span>}
       </div>
     </div>
@@ -237,7 +236,7 @@ function HumanDock({ game }: { game: GameState }) {
   const required = game.phase === 'discard' ? game.pending.discards[humanId] ?? 0 : 0;
   const discarding = required > 0;
   const [sel, setSel] = useState<Bag>(zeroBag);
-  const [remaining, setRemaining] = useState(DISCARD_SECONDS);
+  const [remaining, setRemaining] = useState<number>(game.rules.turnTimer);
   const selectedTotal = RESOURCES.reduce((s, r) => s + sel[r], 0);
 
   // Keep latest hand/target for the timeout closure.
@@ -249,10 +248,10 @@ function HumanDock({ game }: { game: GameState }) {
   useEffect(() => {
     if (!discarding) return;
     setSel(zeroBag());
-    setRemaining(DISCARD_SECONDS);
+    setRemaining(game.rules.turnTimer);
     const started = Date.now();
     const id = setInterval(() => {
-      const left = DISCARD_SECONDS - Math.floor((Date.now() - started) / 1000);
+      const left = game.rules.turnTimer - Math.floor((Date.now() - started) / 1000);
       setRemaining(Math.max(0, left));
       if (left <= 0) {
         clearInterval(id);
@@ -261,7 +260,7 @@ function HumanDock({ game }: { game: GameState }) {
     }, 250);
     return () => clearInterval(id);
     // Re-arm whenever a fresh discard requirement appears.
-  }, [discarding, required, humanId, dispatch]);
+  }, [discarding, required, humanId, dispatch, game.rules.turnTimer]);
 
   const toggleDiscard = (r: Resource, delta: number) =>
     setSel((prev) => {
@@ -370,6 +369,44 @@ function HumanDock({ game }: { game: GameState }) {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+function TurnCountdown({ game }: { game: GameState }) {
+  const humanId = useGame((s) => s.humanId);
+  const dispatch = useGame((s) => s.dispatch);
+  const humanMustAct = game.currentPlayer === humanId && game.phase !== 'discard';
+  const seconds = game.rules.turnTimer;
+  const [remaining, setRemaining] = useState<number>(seconds);
+  const gameRef = useRef(game);
+  gameRef.current = game;
+  const actionKey = `${game.phase}-${game.currentPlayer}-${game.turn}-${game.setup?.step ?? ''}-${game.setup?.lastSettlement ?? ''}-${game.pending.discards[humanId] ?? ''}`;
+
+  useEffect(() => {
+    if (!humanMustAct || game.phase === 'gameOver') return;
+    setRemaining(seconds);
+    const started = Date.now();
+    const interval = setInterval(() => {
+      const left = seconds - Math.floor((Date.now() - started) / 1000);
+      setRemaining(Math.max(0, left));
+      if (left <= 0) {
+        clearInterval(interval);
+        const current = gameRef.current;
+        if (current.phase === 'main') dispatch({ type: 'endTurn' });
+        else {
+          const action = nextBotAction(current, humanId);
+          if (action) dispatch(action);
+        }
+      }
+    }, 250);
+    return () => clearInterval(interval);
+  }, [actionKey, dispatch, humanId, humanMustAct, seconds]);
+
+  if (!humanMustAct || game.phase === 'gameOver') return null;
+  return (
+    <span className={`ml-1 rounded-lg px-2 py-1 text-xs font-extrabold tabular-nums ${remaining <= 5 ? 'bg-p-red text-white' : 'bg-card-alt text-ink'}`}>
+      {remaining}s
+    </span>
   );
 }
 
@@ -636,7 +673,7 @@ function VictoryOverlay({ game }: { game: GameState }) {
         <h2 className="font-display text-3xl font-extrabold" style={{ color: PLAYER_CSS[winner.color] }}>{winner.name} wins!</h2>
         <p className="mb-6 mt-1 text-ink-soft">{victoryPoints(game, winner.id)} victory points</p>
         <button
-          onClick={() => newGame({ players: game.players.map((p) => ({ name: p.name, isBot: p.isBot })), layout: 'random' })}
+          onClick={() => newGame({ players: game.players.map((p) => ({ name: p.name, isBot: p.isBot })), layout: 'random', rules: game.rules })}
           className={`${BTN_BASE} bg-p-green px-6 py-3 text-lg text-white hover:-translate-y-0.5 hover:brightness-105`}
         >
           Play again

@@ -115,6 +115,7 @@ export interface GameState {
   dice: [number, number] | null;
   turn: number;
   rng: RngState;
+  rules: GameRules;
 
   /** Buildings keyed by vertex id; roads keyed by edge id (value = owner index). */
   buildings: Record<number, Building>;
@@ -146,6 +147,15 @@ export interface GameState {
 
   winner: number | null;
   log: LogEntry[];
+}
+
+export interface GameRules {
+  turnTimer: 15 | 30 | 60;
+  victoryPoints: number;
+  discardLimit: number;
+  hideBankCards: boolean;
+  friendlyRobber: boolean;
+  allowPlayerTrades: boolean;
 }
 
 export interface LogEntry {

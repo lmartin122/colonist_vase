@@ -28,7 +28,7 @@ export function TradePanel({ game, onClose }: { game: GameState; onClose: () => 
           <h2 className="font-display text-xl font-extrabold">Trade</h2>
           <div className="ml-auto flex gap-1 rounded-xl bg-card-alt p-1 text-sm">
             <Tab active={tab === 'bank'} onClick={() => setTab('bank')}>Bank</Tab>
-            <Tab active={tab === 'players'} onClick={() => setTab('players')}>Players</Tab>
+            {game.rules.allowPlayerTrades && <Tab active={tab === 'players'} onClick={() => setTab('players')}>Players</Tab>}
           </div>
           <button
             type="button"

@@ -10,7 +10,7 @@ import {
   RESOURCE_CARD,
   diceAsset,
 } from '../assets';
-import { DISCARD_LIMIT, STARTING_STOCK } from '../engine/constants';
+import { STARTING_STOCK } from '../engine/constants';
 import { publicVictoryPoints, totalResources, victoryPoints } from '../engine/helpers';
 import type { GameState, Player } from '../engine/types';
 import { RESOURCES } from '../engine/types';
@@ -114,10 +114,18 @@ function BankSummary({ game }: { game: GameState }) {
       <div className="flex flex-1 items-end justify-around">
         {RESOURCES.map((r) => (
           <div key={r} data-bank={r}>
-            <CardStack src={RESOURCE_CARD[r]} count={game.bank[r]} title={`${r}: ~${game.bank[r]}`} />
+            <CardStack
+              src={RESOURCE_CARD[r]}
+              count={game.rules.hideBankCards ? 1 : game.bank[r]}
+              title={game.rules.hideBankCards ? `${r}: hidden` : `${r}: ~${game.bank[r]}`}
+            />
           </div>
         ))}
-        <CardStack src={CARD_DEV_BACK} count={game.devDeck.length} title={`dev cards: ${game.devDeck.length}`} />
+        <CardStack
+          src={CARD_DEV_BACK}
+          count={game.rules.hideBankCards ? 1 : game.devDeck.length}
+          title={game.rules.hideBankCards ? 'dev cards: hidden' : `dev cards: ${game.devDeck.length}`}
+        />
       </div>
     </div>
   );
@@ -148,7 +156,7 @@ function PlayerPanel({ game, player, isHuman }: { game: GameState; player: Playe
   const color = PLAYER_CSS[player.color];
   const vp = isHuman ? victoryPoints(game, player.id) : publicVictoryPoints(game, player.id);
   const handSize = totalResources(player.resources);
-  const overLimit = handSize > DISCARD_LIMIT;
+  const overLimit = handSize > game.rules.discardLimit;
   const devCount = player.devCards.filter((c) => !c.played).length;
   const roadsBuilt = STARTING_STOCK.roads - player.stock.roads;
   const hasArmy = game.largestArmy.player === player.id;

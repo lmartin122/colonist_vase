@@ -1,9 +1,7 @@
 import type { Action, ReduceResult } from './actions';
 import {
   COSTS,
-  DISCARD_LIMIT,
   LARGEST_ARMY_MIN,
-  WIN_POINTS,
 } from './constants';
 import { rollDie, nextInt } from './rng';
 import { updateLongestRoad } from './longestRoad';
@@ -271,7 +269,7 @@ function beginRobber(state: GameState): GameState {
   const discards: Record<number, number> = {};
   state.players.forEach((p) => {
     const total = totalResources(p.resources);
-    if (total > DISCARD_LIMIT) discards[p.id] = Math.floor(total / 2);
+    if (total > state.rules.discardLimit) discards[p.id] = Math.floor(total / 2);
   });
   if (Object.keys(discards).length > 0) {
     return { ...state, phase: 'discard', pending: { ...state.pending, discards } };
@@ -351,7 +349,11 @@ function applyRobber(
   const occupants = new Set<number>();
   for (const vid of state.board.tiles[tile].vertexIds) {
     const b = state.buildings[vid];
-    if (b && b.owner !== actor && totalResources(state.players[b.owner].resources) > 0) {
+    if (
+      b && b.owner !== actor &&
+      (!state.rules.friendlyRobber || victoryPoints(state, b.owner) >= 3) &&
+      totalResources(state.players[b.owner].resources) > 0
+    ) {
       occupants.add(b.owner);
     }
   }
@@ -570,6 +572,7 @@ function playerTrade(
   give: Partial<Record<Resource, number>>,
   receive: Partial<Record<Resource, number>>,
 ): GameState {
+  if (!state.rules.allowPlayerTrades) fail('Player trading is disabled');
   requireMain(state);
   const player = state.currentPlayer;
   if (partner === player) fail('Cannot trade with yourself');
@@ -603,7 +606,7 @@ function updateLargestArmy(state: GameState): GameState {
 
 function checkWin(state: GameState): GameState {
   const player = state.currentPlayer;
-  if (victoryPoints(state, player) >= WIN_POINTS) {
+  if (victoryPoints(state, player) >= state.rules.victoryPoints) {
     return log({ ...state, phase: 'gameOver', winner: player }, `${playerName(state, player)} wins!`);
   }
   return state;
