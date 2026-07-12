@@ -95,6 +95,7 @@ export interface OwnedDevCard {
 // ---------------------------------------------------------------------------
 
 export type Phase =
+  | 'startingRoll' // players roll to determine the first setup player
   | 'setup' // initial snake-draft placement
   | 'roll' // current player must roll
   | 'discard' // players over the limit must discard after a 7
@@ -108,6 +109,8 @@ export interface GameState {
   bank: ResourceBank;
   devDeck: DevCardType[];
   currentPlayer: number;
+  /** Clockwise player order, rotated so the opening-roll winner is first. */
+  turnOrder: number[];
   phase: Phase;
   dice: [number, number] | null;
   turn: number;
@@ -119,6 +122,12 @@ export interface GameState {
 
   longestRoad: { player: number | null; length: number };
   largestArmy: { player: number | null; size: number };
+
+  /** Current roll-off round used to determine who starts setup. */
+  startingRoll: {
+    contenders: number[];
+    rolls: Partial<Record<number, [number, number]>>;
+  } | null;
 
   /** Setup progression: index into the snake-draft order. */
   setup: { order: number[]; step: number; lastSettlement: number | null } | null;

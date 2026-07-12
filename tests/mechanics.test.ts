@@ -26,6 +26,7 @@ function edgeAt(s: GameState, vertex: number): number {
   return s.board.vertices[vertex].edgeIds.find((e) => s.roads[e] === undefined)!;
 }
 function autoSetup(s: GameState): GameState {
+  while (s.phase === 'startingRoll') s = applyOrThrow(s, { type: 'rollForStart' });
   while (s.phase === 'setup') {
     const v = firstOpenVertex(s);
     s = applyOrThrow(s, { type: 'placeSetupSettlement', vertex: v });

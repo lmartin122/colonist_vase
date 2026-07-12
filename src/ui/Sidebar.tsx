@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   CARD_DEV_BACK,
   CARD_HIDDEN,
@@ -8,6 +8,7 @@ import {
   LARGEST_ROAD,
   LARGEST_ROAD_HL,
   RESOURCE_CARD,
+  diceAsset,
 } from '../assets';
 import { DISCARD_LIMIT, STARTING_STOCK } from '../engine/constants';
 import { publicVictoryPoints, totalResources, victoryPoints } from '../engine/helpers';
@@ -23,19 +24,15 @@ import { useGame } from '../state/store';
  */
 export function Sidebar({ game }: { game: GameState }) {
   const humanId = useGame((s) => s.humanId);
-  const opponents = game.players.filter((p) => p.id !== humanId);
-  const human = game.players[humanId];
   return (
-    <aside className="pointer-events-auto absolute right-0 top-0 z-10 hidden h-full w-[300px] flex-col gap-2 p-2 md:flex lg:w-[330px]">
-      <LogPane game={game} />
-      <ChatPane />
+    <aside className="pointer-events-auto absolute bottom-3 right-0 top-0 z-10 hidden w-[300px] flex-col gap-2 px-2 pt-2 md:flex lg:w-[330px]">
+      <HistoryChatPanels game={game} />
       <BankSummary game={game} />
       <div className="flex flex-col gap-1.5">
-        {opponents.map((p) => (
-          <PlayerPanel key={p.id} game={game} player={p} isHuman={false} />
+        {game.turnOrder.map((playerId) => (
+          <PlayerPanel key={playerId} game={game} player={game.players[playerId]} isHuman={playerId === humanId} />
         ))}
       </div>
-      <PlayerPanel game={game} player={human} isHuman />
     </aside>
   );
 }
@@ -50,7 +47,7 @@ function LogPane({ game }: { game: GameState }) {
   return (
     <div
       ref={ref}
-      className="min-h-[110px] flex-1 overflow-y-auto rounded-2xl bg-card p-3 text-sm text-ink shadow-panel ring-1 ring-black/5 dark:ring-white/10"
+      className="min-h-0 overflow-y-auto rounded-2xl bg-card p-3 text-sm text-ink shadow-panel ring-1 ring-black/5 dark:ring-white/10"
     >
       {game.log.slice(-40).map((e, i) => (
         <div key={i} className="flex items-start gap-1.5 leading-6">
@@ -72,7 +69,7 @@ function LogPane({ game }: { game: GameState }) {
 function ChatPane() {
   const [open, setOpen] = useState(true);
   return (
-    <div className="rounded-2xl bg-card text-ink shadow-panel ring-1 ring-black/5 dark:ring-white/10">
+    <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-card text-ink shadow-panel ring-1 ring-black/5 dark:ring-white/10">
       <button
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center justify-between px-3 py-2 font-display font-extrabold"
@@ -81,8 +78,8 @@ function ChatPane() {
         <span className={`transition-transform ${open ? '' : 'rotate-180'}`}>⌃</span>
       </button>
       {open && (
-        <div className="border-t border-black/5 px-3 py-2 dark:border-white/10">
-          <div className="max-h-24 space-y-1 overflow-y-auto text-xs text-ink-soft">
+        <div className="flex min-h-0 flex-1 flex-col border-t border-black/5 px-3 py-2 dark:border-white/10">
+          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto text-xs text-ink-soft">
             <p><b className="text-ink">Ada:</b> gl hf! 🎲</p>
             <p><b className="text-ink">Bram:</b> anyone got wheat?</p>
             <p className="text-ink-faint italic">Chat is a preview — coming soon.</p>
@@ -156,19 +153,22 @@ function PlayerPanel({ game, player, isHuman }: { game: GameState; player: Playe
   const roadsBuilt = STARTING_STOCK.roads - player.stock.roads;
   const hasArmy = game.largestArmy.player === player.id;
   const hasRoad = game.longestRoad.player === player.id;
+  const shownDice = game.phase === 'startingRoll'
+    ? game.startingRoll?.rolls[player.id] ?? null
+    : active ? game.dice : null;
 
   return (
     <div
       data-player={player.id}
       className={`flex items-center gap-2 rounded-2xl px-2.5 py-2 shadow-panel ring-1 transition ${
         isHuman ? 'bg-card' : 'bg-card/90'
-      } ${active ? 'ring-2' : 'ring-black/5 dark:ring-white/10'}`}
-      style={active ? { boxShadow: `0 0 0 2px ${color}, 0 6px 20px -6px rgba(20,30,40,.35)` } : undefined}
+      } ${active ? 'bg-card-alt ring-2' : 'ring-black/5 dark:ring-white/10'}`}
+      style={active ? { boxShadow: `0 0 0 3px ${color}, 0 8px 24px -6px rgba(20,30,40,.45)` } : undefined}
     >
-      <Avatar color={color} isHuman={isHuman} vp={vp} active={active} big={isHuman} />
-      <div className={`flex flex-1 items-center justify-between ${isHuman ? 'gap-2' : 'gap-1.5'}`}>
-        {isHuman && <span className="mr-1 font-display text-lg font-extrabold text-ink">{player.name}</span>}
-        {!isHuman && <span className="mr-auto font-display text-sm font-bold text-ink">{player.name}</span>}
+      <Avatar color={color} isHuman={isHuman} vp={vp} active={active} />
+      <div className="flex min-w-0 flex-1 items-center justify-between gap-1.5">
+        <span className="mr-auto truncate font-display text-sm font-bold text-ink">{player.name}</span>
+        {shownDice && <RollDice dice={shownDice} />}
         <CountCard src={overLimit ? CARD_HIDDEN_WARNING : CARD_HIDDEN} count={handSize} />
         <CountCard src={CARD_DEV_BACK} count={devCount} />
         <StatIcon
@@ -188,12 +188,66 @@ function PlayerPanel({ game, player, isHuman }: { game: GameState; player: Playe
   );
 }
 
-function Avatar({ color, isHuman, vp, active, big }: { color: string; isHuman: boolean; vp: number; active: boolean; big?: boolean }) {
-  const size = big ? 'h-14 w-14 text-2xl' : 'h-11 w-11 text-lg';
+function HistoryChatPanels({ game }: { game: GameState }) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const [historyPercent, setHistoryPercent] = useState(52);
+  const livePercent = useRef(historyPercent);
+
+  const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const resize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    const host = hostRef.current;
+    if (!host) return;
+    const bounds = host.getBoundingClientRect();
+    const percent = ((event.clientY - bounds.top) / bounds.height) * 100;
+    livePercent.current = Math.min(78, Math.max(22, percent));
+    host.style.gridTemplateRows = `${livePercent.current}% 10px minmax(0, 1fr)`;
+  };
+  const finishResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    setHistoryPercent(livePercent.current);
+  };
+
+  return (
+    <div ref={hostRef} className="grid min-h-[220px] flex-1" style={{ gridTemplateRows: `${historyPercent}% 10px minmax(0, 1fr)` }}>
+      <LogPane game={game} />
+      <div
+        role="separator"
+        aria-label="Resize history and chat panels"
+        aria-orientation="horizontal"
+        aria-valuenow={Math.round(historyPercent)}
+        onPointerDown={startResize}
+        onPointerMove={resize}
+        onPointerUp={finishResize}
+        onPointerCancel={finishResize}
+        className="group flex cursor-row-resize touch-none items-center justify-center"
+      >
+        <span className="h-1 w-14 rounded-full bg-white/20 opacity-0 shadow-sm transition group-hover:bg-white/70 group-hover:opacity-100 group-active:bg-white group-active:opacity-100" />
+      </div>
+      <ChatPane />
+    </div>
+  );
+}
+
+function RollDice({ dice }: { dice: [number, number] }) {
+  return (
+    <div className="flex shrink-0 gap-0.5" title={`Rolled ${dice[0]} + ${dice[1]} = ${dice[0] + dice[1]}`}>
+      {dice.map((value, index) => (
+        <img key={`${index}-${value}`} src={diceAsset(value)} alt={`Die showing ${value}`} className="h-6 w-6 drop-shadow-sm" />
+      ))}
+    </div>
+  );
+}
+
+function Avatar({ color, isHuman, vp, active }: { color: string; isHuman: boolean; vp: number; active: boolean }) {
   return (
     <div className="relative flex shrink-0 flex-col items-center">
       <div
-        className={`flex items-center justify-center rounded-full ${size} ${active ? 'ring-[3px]' : 'ring-2'}`}
+        className={`flex h-11 w-11 items-center justify-center rounded-full text-lg ${active ? 'ring-[3px]' : 'ring-2'}`}
         style={{ background: `${color}22`, boxShadow: `inset 0 0 0 2px ${color}` }}
       >
         <span>{isHuman ? '🎩' : '🤖'}</span>

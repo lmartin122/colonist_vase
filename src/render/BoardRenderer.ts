@@ -53,6 +53,7 @@ export class BoardRenderer {
   private seenRoads = new Set<number>();
   private anims: Anim[] = [];
   private robberSprite: Container | null = null;
+  private bottomInset = 0;
 
   constructor(
     private readonly app: Application,
@@ -435,9 +436,25 @@ export class BoardRenderer {
     if (!this.board) return;
     const maxR = Math.max(...this.board.vertices.map((v) => Math.hypot(v.point.x, v.point.y))) + 130;
     const { width, height } = this.app.screen;
-    const scale = Math.min(width, height) / (maxR * 2);
+    const usableHeight = Math.max(1, height - this.bottomInset);
+    const scale = Math.min(width, usableHeight) / (maxR * 2);
     this.view.scale.set(scale);
-    this.view.position.set(width / 2, height / 2);
+    this.view.position.set(width / 2, usableHeight / 2);
+  }
+
+  /** Reserve screen space occupied by HTML controls below the board. */
+  setBottomInset(pixels: number): void {
+    this.bottomInset = Math.max(0, pixels);
+    this.fit();
+  }
+
+  /** Move the fitted board by a client-pixel drag delta. */
+  panByClient(dx: number, dy: number): void {
+    const rect = this.app.canvas.getBoundingClientRect();
+    const scaleX = rect.width ? this.app.screen.width / rect.width : 1;
+    const scaleY = rect.height ? this.app.screen.height / rect.height : 1;
+    this.view.position.x += dx * scaleX;
+    this.view.position.y += dy * scaleY;
   }
 
   private tick(deltaMS: number): void {

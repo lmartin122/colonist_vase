@@ -49,6 +49,7 @@ function applyTheme(theme: Theme): void {
 applyTheme(initialTheme());
 
 const DELAYS: Record<string, number> = {
+  startingRoll: 700,
   setup: 450,
   roll: 600,
   moveRobber: 750,

@@ -17,17 +17,29 @@ const BTN = 'inline-flex items-center justify-center gap-1.5 rounded-xl font-bol
 export function TradePanel({ game, onClose }: { game: GameState; onClose: () => void }) {
   const [tab, setTab] = useState<'bank' | 'players'>('bank');
   return (
-    <div className="pointer-events-auto absolute inset-0 z-20 flex items-end justify-center bg-black/40 p-4 backdrop-blur-sm sm:items-center">
-      <motion.div initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ type: 'spring', stiffness: 240, damping: 22 }} className={`max-h-[90vh] w-full max-w-lg overflow-y-auto p-4 sm:p-5 ${CARD}`}>
+    <div className="pointer-events-none fixed inset-0 z-30">
+      <motion.div
+        initial={{ y: 40, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ type: 'spring', stiffness: 240, damping: 22 }}
+        className={`pointer-events-auto absolute bottom-[7.5rem] left-2 max-h-[calc(100vh-9rem)] w-[calc((100vw-24px)/3)] overflow-auto p-4 sm:left-3 sm:w-[calc((100vw-32px)/3)] md:w-[calc((100vw-332px)/3)] lg:w-[calc((100vw-362px)/3)] ${CARD}`}
+      >
         <div className="mb-4 flex items-center gap-2">
           <h2 className="font-display text-xl font-extrabold">Trade</h2>
           <div className="ml-auto flex gap-1 rounded-xl bg-card-alt p-1 text-sm">
             <Tab active={tab === 'bank'} onClick={() => setTab('bank')}>Bank</Tab>
             <Tab active={tab === 'players'} onClick={() => setTab('players')}>Players</Tab>
           </div>
-          <button onClick={onClose} className={`${BTN} h-8 w-8 bg-card-alt text-ink hover:bg-ink/10`}>✕</button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close trade panel"
+            className={`${BTN} h-8 w-8 shrink-0 bg-card-alt text-ink hover:bg-ink/10`}
+          >
+            ×
+          </button>
         </div>
-        {tab === 'bank' ? <BankTrade game={game} onClose={onClose} /> : <PlayerTrade game={game} onClose={onClose} />}
+        {tab === 'bank' ? <BankTrade game={game} /> : <PlayerTrade game={game} />}
       </motion.div>
     </div>
   );
@@ -41,7 +53,7 @@ function Tab({ active, onClick, children }: { active: boolean; onClick: () => vo
   );
 }
 
-function BankTrade({ game, onClose }: { game: GameState; onClose: () => void }) {
+function BankTrade({ game }: { game: GameState }) {
   const dispatch = useGame((s) => s.dispatch);
   const humanId = useGame((s) => s.humanId);
   const me = game.players[humanId];
@@ -64,7 +76,7 @@ function BankTrade({ game, onClose }: { game: GameState; onClose: () => void }) 
         for <b className="text-ink">1</b>
         <img src={RESOURCE_CARD[get]} alt={get} className="inline-block w-3.5 rounded-[3px] align-middle" draggable={false} />
       </div>
-      <button disabled={!affordable} onClick={() => { dispatch({ type: 'bankTrade', give, receive: get }); onClose(); }} className={`${BTN} w-full px-4 py-3 ${affordable ? 'bg-p-green text-white hover:brightness-105' : 'bg-card-alt text-ink-faint'}`}>
+      <button disabled={!affordable} onClick={() => dispatch({ type: 'bankTrade', give, receive: get })} className={`${BTN} w-full px-4 py-3 ${affordable ? 'bg-p-green text-white hover:brightness-105' : 'bg-card-alt text-ink-faint'}`}>
         Trade
       </button>
     </div>
@@ -93,7 +105,7 @@ function ResourcePick({ label, value, onChange, game, humanId, showRatio }: {
   );
 }
 
-function PlayerTrade({ game, onClose }: { game: GameState; onClose: () => void }) {
+function PlayerTrade({ game }: { game: GameState }) {
   const dispatch = useGame((s) => s.dispatch);
   const humanId = useGame((s) => s.humanId);
   const me = game.players[humanId];
@@ -108,7 +120,6 @@ function PlayerTrade({ game, onClose }: { game: GameState; onClose: () => void }
     const partner = bestTradePartner(game, humanId, giveBag, getBag);
     if (partner === null) { setMessage('All opponents declined that offer.'); return; }
     dispatch({ type: 'playerTrade', partner, give: giveBag, receive: getBag });
-    onClose();
   };
 
   return (

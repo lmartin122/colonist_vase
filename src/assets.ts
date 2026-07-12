@@ -53,6 +53,11 @@ export const LARGEST_ROAD_HL = `${BASE}/largest_road_icon_highlight.svg`;
 /** Trade action icon. */
 export const TRADE_ICON = `${BASE}/trade_icon.svg`;
 
+/** Face art for a single die result. */
+export function diceAsset(value: number): string {
+  return `${BASE}/dice_${value}.svg`;
+}
+
 /** All texture URLs the board renderer must preload before drawing. */
 export function boardTextureUrls(): string[] {
   const colors: PlayerColor[] = ['red', 'blue', 'orange', 'green'];

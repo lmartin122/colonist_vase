@@ -20,7 +20,7 @@ export interface GameConfig {
   seed?: number;
 }
 
-/** Build the initial, ready-to-play GameState (phase = 'setup'). */
+/** Build the initial GameState, beginning with the roll for placement order. */
 export function createGame(config: GameConfig): GameState {
   const seed = config.seed ?? (Math.random() * 2 ** 31) | 0;
   let rng: RngState = { seed };
@@ -45,17 +45,14 @@ export function createGame(config: GameConfig): GameState {
   const bank = emptyBank();
   for (const r of Object.keys(bank) as (keyof typeof bank)[]) bank[r] = BANK_PER_RESOURCE;
 
-  // Snake-draft order: 0..n-1 then n-1..0.
-  const forward = players.map((p) => p.id);
-  const order = [...forward, ...forward.slice().reverse()];
-
   return {
     players,
     board: boardResult.board,
     bank,
     devDeck: deckResult.items,
-    currentPlayer: order[0],
-    phase: 'setup',
+    currentPlayer: players[0].id,
+    turnOrder: players.map((p) => p.id),
+    phase: 'startingRoll',
     dice: null,
     turn: 0,
     rng,
@@ -63,7 +60,8 @@ export function createGame(config: GameConfig): GameState {
     roads: {},
     longestRoad: { player: null, length: 0 },
     largestArmy: { player: null, size: 0 },
-    setup: { order, step: 0, lastSettlement: null },
+    startingRoll: { contenders: players.map((p) => p.id), rolls: {} },
+    setup: null,
     pending: {
       discards: {},
       freeRoads: 0,
@@ -71,6 +69,6 @@ export function createGame(config: GameConfig): GameState {
       hasRolled: false,
     },
     winner: null,
-    log: [{ turn: 0, player: null, message: 'Game created. Place your first settlement.' }],
+    log: [{ turn: 0, player: null, message: 'Game created. Roll to determine who places first.' }],
   };
 }
