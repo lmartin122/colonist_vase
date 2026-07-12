@@ -215,9 +215,6 @@ function HumanDock({ game }: { game: GameState }) {
       return { ...prev, [r]: prev[r] - 1 };
     });
 
-  // The dock fills the play area: inventory 1/3, action menu 2/3.
-  const menuVisible = inMain || canRoll;
-
   return (
     <div className="pointer-events-auto absolute bottom-2 left-0 right-0 flex flex-col items-center gap-2 px-2 sm:bottom-3 sm:px-3">
       {discarding && (
@@ -230,18 +227,18 @@ function HumanDock({ game }: { game: GameState }) {
       )}
       {myTurn && !discarding && <DevCardBar game={game} me={me} />}
 
-      <div className={`flex w-full items-stretch gap-2 ${menuVisible ? '' : 'justify-center'}`}>
+
+      <div className="flex w-full items-stretch gap-2">
         {/* Resource hand — fanned cards, grouped by resource (click to discard) */}
         <div
           data-hand-panel
-          className={`flex items-center gap-2 overflow-x-auto px-3 pb-2 pt-4 ${CARD} ${menuVisible ? 'basis-1/3' : ''} ${discarding ? 'ring-2 ring-amber-400' : ''}`}
+          className={`flex basis-1/3 items-center gap-2 overflow-x-auto px-3 pb-2 pt-4 ${CARD} ${discarding ? 'ring-2 ring-amber-400' : ''}`}
         >
           <ResourceHand me={me} discard={discarding ? { sel, onToggle: toggleDiscard } : undefined} />
         </div>
 
         {/* Action menu */}
-        {menuVisible && (
-          <div className={`flex basis-2/3 items-stretch justify-between gap-1.5 p-2 ${CARD}`}>
+        <div className={`flex basis-2/3 items-stretch justify-between gap-1.5 p-2 ${CARD}`}>
             <ActionButton img={TRADE_ICON} label="Trade" onClick={() => setTradeOpen(true)} disabled={!inMain} />
             <ActionButton
               img={CARD_DEV_BACK}
@@ -292,7 +289,6 @@ function HumanDock({ game }: { game: GameState }) {
               </button>
             )}
           </div>
-        )}
       </div>
 
       {tradeOpen && inMain && <TradePanel game={game} onClose={() => setTradeOpen(false)} />}
