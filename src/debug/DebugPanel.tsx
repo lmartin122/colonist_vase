@@ -25,10 +25,11 @@ export function DebugPanel() {
   const toggleInfiniteTimer = useGame((s) => s.toggleDebugInfiniteTimer);
   const fastForwardTurn = useGame((s) => s.fastForwardTurn);
   const simulatePhase = useGame((s) => s.simulatePhase);
+  const simulateToGameEnd = useGame((s) => s.simulateToGameEnd);
   const [open, setOpen] = useState(false);
   const [devCard, setDevCard] = useState<DevCardType>('knight');
 
-  if (!enabled || !game) return null;
+  if (!enabled || !game || game.phase === 'gameOver') return null;
   const canTriggerRobber = game.currentPlayer === humanId && (game.phase === 'roll' || game.phase === 'main');
   const infiniteForCurrentTurn = infiniteTimer?.player === game.currentPlayer && infiniteTimer.turn === game.turn;
 
@@ -84,6 +85,7 @@ export function DebugPanel() {
             <button type="button" onClick={fastForwardTurn} className="rounded-xl bg-card-alt px-2 py-2 text-xs font-extrabold text-ink transition hover:bg-ink hover:text-card">Fast-forward turn</button>
           </div>
           <button type="button" onClick={simulatePhase} className="mt-2 w-full rounded-xl bg-violet-700 px-3 py-2 text-xs font-extrabold text-white transition hover:bg-violet-600">Simulate {game.phase}</button>
+          <button type="button" onClick={simulateToGameEnd} className="mt-2 w-full rounded-xl bg-ink px-3 py-2 text-xs font-extrabold text-card transition hover:brightness-125">Fast-forward to game end</button>
         </section>
       )}
     </div>

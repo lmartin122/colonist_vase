@@ -25,7 +25,7 @@ import { RESOURCES } from './types';
  */
 export function reduce(state: GameState, action: Action): ReduceResult {
   try {
-    return { ok: true, state: apply(state, action) };
+    return { ok: true, state: trackMatchStats(state, apply(state, action), action) };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -83,7 +83,9 @@ function apply(state: GameState, action: Action): GameState {
     case 'playerTrade':
       return playerTrade(state, action.partner, action.give, action.receive);
     case 'createTradeOffer':
-      return createTradeOffer(state, action.give, action.receive, action.anyCount);
+      return createTradeOffer(state, action.give, action.receive, action.anyCount, action.target ?? null);
+    case 'respondTradeOffer':
+      return respondTradeOffer(state, action.offerId, action.responder, action.accepted, action.wildcardResource ?? null);
     case 'completeTradeOffer':
       return completeTradeOffer(state, action.offerId, action.partner);
     case 'cancelTradeOffer':
@@ -421,6 +423,69 @@ function buildRoad(state: GameState, edge: number): GameState {
   return placeRoad(spend(state, state.currentPlayer, COSTS.road), edge);
 }
 
+/** Count every card entering a hand without coupling individual actions to statistics. */
+function trackMatchStats(before: GameState, after: GameState, action: Action): GameState {
+  let changed = false;
+  let players = after.players.map((player, index) => {
+    const previous = before.players[index];
+    if (!previous) return player;
+    const gains = RESOURCES.map((resource) => Math.max(0, player.resources[resource] - previous.resources[resource]));
+    if (!gains.some(Boolean)) return player;
+    changed = true;
+    const resourcesCollected = { ...player.stats.resourcesCollected };
+    RESOURCES.forEach((resource, resourceIndex) => { resourcesCollected[resource] += gains[resourceIndex]; });
+    return { ...player, stats: { ...player.stats, resourcesCollected } };
+  });
+  const increment = (playerId: number, field: keyof Omit<Player['stats'], 'resourcesCollected' | 'devCardsCollected'>, amount = 1) => {
+    const player = players[playerId];
+    players = players.map((item, index) => index === playerId ? { ...player, stats: { ...player.stats, [field]: player.stats[field] + amount } } : item);
+    changed = true;
+  };
+  const actor = before.currentPlayer;
+  let diceStats = after.diceStats;
+
+  switch (action.type) {
+    case 'rollDice': {
+      const total = after.dice ? after.dice[0] + after.dice[1] : 0;
+      diceStats = { ...after.diceStats, [total]: (after.diceStats[total] ?? 0) + 1 };
+      increment(actor, 'turnsTaken');
+      break;
+    }
+    case 'placeSetupRoad': case 'buildRoad': increment(actor, 'roadsPlaced'); break;
+    case 'placeSetupSettlement': case 'buildSettlement': increment(actor, 'settlementsPlaced'); break;
+    case 'buildCity': increment(actor, 'citiesBuilt'); break;
+    case 'bankTrade': increment(actor, 'bankTrades'); break;
+    case 'createTradeOffer': increment(actor, 'tradeOffers'); break;
+    case 'playerTrade': case 'completeTradeOffer':
+      increment(actor, 'playerTrades');
+      increment(action.partner, 'playerTrades');
+      break;
+    case 'discard':
+      increment(action.player, 'cardsDiscarded', RESOURCES.reduce((sum, resource) => sum + (action.resources[resource] ?? 0), 0));
+      break;
+    case 'moveRobber': case 'playKnight': {
+      increment(actor, 'robberMoves');
+      if (action.stealFrom !== null && totalResources(after.players[action.stealFrom].resources) < totalResources(before.players[action.stealFrom].resources)) {
+        increment(actor, 'successfulSteals');
+        increment(actor, 'cardsStolen');
+      }
+      if (action.type === 'playKnight') increment(actor, 'devCardsPlayed');
+      break;
+    }
+    case 'buyDevCard': case 'debugGrantDevCard': {
+      const playerId = action.type === 'buyDevCard' ? actor : action.player;
+      const type = action.type === 'debugGrantDevCard' ? action.card : after.players[playerId].devCards.at(-1)!.type;
+      const player = players[playerId];
+      players = players.map((item, index) => index === playerId ? { ...player, stats: { ...player.stats, devCardsCollected: { ...player.stats.devCardsCollected, [type]: player.stats.devCardsCollected[type] + 1 } } } : item);
+      changed = true;
+      if (action.type === 'buyDevCard') increment(playerId, 'devCardsBought');
+      break;
+    }
+    case 'playRoadBuilding': case 'playMonopoly': case 'playYearOfPlenty': increment(actor, 'devCardsPlayed'); break;
+  }
+  return changed || diceStats !== after.diceStats ? { ...after, players, diceStats } : after;
+}
+
 /** Place a road (payment handled by caller — free during road-building card). */
 function placeRoad(state: GameState, edge: number): GameState {
   const player = state.currentPlayer;
@@ -609,6 +674,7 @@ function createTradeOffer(
   give: Partial<Record<Resource, number>>,
   receive: Partial<Record<Resource, number>>,
   anyCount: number,
+  target: number | null,
 ): GameState {
   if (!state.rules.allowPlayerTrades) fail('Player trading is disabled');
   requireMain(state);
@@ -619,18 +685,40 @@ function createTradeOffer(
   if (offered <= 0 || requested + anyCount <= 0 || !Number.isInteger(anyCount) || anyCount < 0) fail('Trade offer must include cards on both sides');
 
   const responses: Record<number, TradeOfferResponse> = {};
-  for (const player of state.players) {
-    if (player.id === proposer) continue;
-    const wildcardResource = anyCount > 0
-      ? RESOURCES.find((resource) => botAcceptsTrade(state, player.id, give, { ...receive, [resource]: (receive[resource] ?? 0) + anyCount })) ?? null
-      : null;
-    responses[player.id] = {
-      accepted: anyCount > 0 ? wildcardResource !== null : botAcceptsTrade(state, player.id, give, receive),
-      wildcardResource,
-    };
+  if (target !== null) {
+    if (!state.players[proposer].isBot || state.players[target]?.isBot !== false || target === proposer) fail('Bot offers must target a human opponent');
+    if (state.pending.botTradeOfferedThisTurn) fail('Bot already offered a trade this turn');
+    if (anyCount > 0) fail('Bot offers cannot request wildcard resources');
+    for (const player of state.players) {
+      if (player.id === proposer) continue;
+      if (player.id === target) responses[player.id] = { status: 'pending', wildcardResource: null };
+      else responses[player.id] = { status: botAcceptsTrade(state, player.id, give, receive) ? 'accepted' : 'declined', wildcardResource: null };
+    }
+  } else {
+    for (const player of state.players) {
+      if (player.id === proposer) continue;
+      const wildcardResource = anyCount > 0
+        ? RESOURCES.find((resource) => botAcceptsTrade(state, player.id, give, { ...receive, [resource]: (receive[resource] ?? 0) + anyCount })) ?? null
+        : null;
+      responses[player.id] = {
+        status: (anyCount > 0 ? wildcardResource !== null : botAcceptsTrade(state, player.id, give, receive)) ? 'accepted' : 'declined',
+        wildcardResource,
+      };
+    }
   }
-  const offer = { id: state.nextTradeOfferId, proposer, give, receive, anyCount, responses };
-  return log({ ...state, tradeOffers: [...state.tradeOffers, offer], nextTradeOfferId: state.nextTradeOfferId + 1 }, `${playerName(state, proposer)} proposed a trade`);
+  const offer = { id: state.nextTradeOfferId, proposer, give, receive, anyCount, target, responses };
+  const pending = target === null ? state.pending : { ...state.pending, botTradeOfferedThisTurn: true };
+  return log({ ...state, pending, tradeOffers: [...state.tradeOffers, offer], nextTradeOfferId: state.nextTradeOfferId + 1 }, `${playerName(state, proposer)} proposed a trade`);
+}
+
+function respondTradeOffer(state: GameState, offerId: number, responder: number, accepted: boolean, wildcardResource: Resource | null): GameState {
+  const offer = state.tradeOffers.find((item) => item.id === offerId);
+  if (!offer || offer.target !== responder || offer.responses[responder]?.status !== 'pending') fail('Trade response is no longer pending');
+  if (state.players[responder].isBot) fail('Only the targeted human can respond');
+  const status = accepted ? 'accepted' as const : 'declined' as const;
+  const responses = { ...offer.responses, [responder]: { status, wildcardResource: accepted ? wildcardResource : null } };
+  const next = { ...state, tradeOffers: state.tradeOffers.map((item) => item.id === offerId ? { ...item, responses } : item) };
+  return log(next, `${playerName(state, responder)} ${accepted ? 'accepted' : 'declined'} the trade offer`);
 }
 
 function completeTradeOffer(state: GameState, offerId: number, partner: number): GameState {
@@ -639,7 +727,7 @@ function completeTradeOffer(state: GameState, offerId: number, partner: number):
   if (!offer) fail('Trade offer no longer exists');
   if (offer.proposer !== state.currentPlayer) fail('Only the current proposer can choose a trade partner');
   const response = offer.responses[partner];
-  if (!response?.accepted) fail('That player did not accept this offer');
+  if (response?.status !== 'accepted') fail('That player did not accept this offer');
   const receive = { ...offer.receive };
   if (offer.anyCount > 0 && response.wildcardResource) receive[response.wildcardResource] = (receive[response.wildcardResource] ?? 0) + offer.anyCount;
   if (!canAfford(state.players[offer.proposer].resources, offer.give)) fail('You no longer have the offered resources');
@@ -648,7 +736,11 @@ function completeTradeOffer(state: GameState, offerId: number, partner: number):
   let next = withPlayer(state, offer.proposer, (p) => ({ ...p, resources: addResources(subtractResources(p.resources, offer.give), receive) }));
   next = withPlayer(next, partner, (p) => ({ ...p, resources: addResources(subtractResources(p.resources, receive), offer.give) }));
   next = { ...next, tradeOffers: next.tradeOffers.filter((item) => item.id !== offerId) };
-  return log(next, `${playerName(next, offer.proposer)} traded with ${playerName(next, partner)}`);
+  return log(next, `${playerName(next, offer.proposer)} traded ${formatResources(offer.give)} for ${formatResources(receive)} with ${playerName(next, partner)}`);
+}
+
+function formatResources(resources: Partial<Record<Resource, number>>): string {
+  return RESOURCES.filter((resource) => (resources[resource] ?? 0) > 0).map((resource) => `${resources[resource]} ${resource}`).join(', ');
 }
 
 function cancelTradeOffer(state: GameState, offerId: number): GameState {
@@ -719,7 +811,7 @@ function endTurn(state: GameState): GameState {
     phase: 'roll',
     dice: null,
     turn: state.turn + 1,
-    pending: { discards: {}, freeRoads: 0, playedDevThisTurn: false, hasRolled: false },
+    pending: { discards: {}, freeRoads: 0, playedDevThisTurn: false, hasRolled: false, botTradeOfferedThisTurn: false },
     tradeOffers: [],
     log: [...state.log, { turn: state.turn + 1, player: nextPlayer, message: `${playerName(state, nextPlayer)}'s turn` }],
   };

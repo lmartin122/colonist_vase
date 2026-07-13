@@ -85,6 +85,8 @@ export function deriveFlights(
       return playerBankDiff(before, after, before.currentPlayer, humanId);
     case 'playerTrade':
       return tradeFlights(before, after, action.partner, humanId);
+    case 'completeTradeOffer':
+      return tradeFlights(before, after, action.partner, humanId);
     case 'playMonopoly':
       return monopolyFlights(before, after, action.resource, humanId);
     case 'playYearOfPlenty':

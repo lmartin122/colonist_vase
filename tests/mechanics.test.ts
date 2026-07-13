@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { createGame } from '../src/engine/game';
 import { applyOrThrow, reduce } from '../src/engine/reduce';
 import { longestRoadLength } from '../src/engine/longestRoad';
-import { bankTradeRatio, totalResources } from '../src/engine/helpers';
+import { bankTradeRatio, totalResources, victoryPoints } from '../src/engine/helpers';
 import type { DevCardType, GameState, Resource } from '../src/engine/types';
 import { legalRoadEdges, robberTargetTiles, stealableOpponents } from '../src/engine/placement';
+import { nextBotAction } from '../src/ai/bot';
+import { deriveFlights } from '../src/state/flights';
 
 function game(seed = 1): GameState {
   return createGame({
@@ -55,6 +57,8 @@ describe('bank trading', () => {
     if (res.ok) {
       expect(res.state.players[0].resources.wood).toBe(0);
       expect(res.state.players[0].resources.ore).toBe(1);
+      expect(res.state.players[0].stats.bankTrades).toBe(1);
+      expect(res.state.players[0].stats.resourcesCollected.ore).toBeGreaterThanOrEqual(1);
     }
   });
 
@@ -81,11 +85,14 @@ describe('trade offers', () => {
       anyCount: 0,
     });
     expect(s.tradeOffers).toHaveLength(1);
-    expect(s.tradeOffers[0].responses[1].accepted).toBe(true);
+    expect(s.tradeOffers[0].responses[1].status).toBe('accepted');
 
     s = applyOrThrow(s, { type: 'completeTradeOffer', offerId: s.tradeOffers[0].id, partner: 1 });
     expect(s.players[0].resources).toMatchObject({ ore: 1, sheep: 1 });
     expect(s.tradeOffers).toHaveLength(0);
+    expect(s.players[0].stats.tradeOffers).toBe(1);
+    expect(s.players[0].stats.playerTrades).toBe(1);
+    expect(s.players[1].stats.playerTrades).toBe(1);
 
     s = applyOrThrow(s, {
       type: 'createTradeOffer',
@@ -96,6 +103,50 @@ describe('trade offers', () => {
     expect(reduce(s, { type: 'endTurn' }).ok).toBe(true);
     s = applyOrThrow(s, { type: 'endTurn' });
     expect(s.tradeOffers).toHaveLength(0);
+  });
+
+  it('pauses a targeted bot offer for the human and resolves accept or decline', () => {
+    let s = autoSetup(game(17));
+    s = { ...s, currentPlayer: 1, phase: 'main' };
+    s = setRes(s, 1, { wood: 2 });
+    s = setRes(s, 0, { ore: 2 });
+    s = setRes(s, 2, {});
+    s = applyOrThrow(s, { type: 'createTradeOffer', give: { wood: 1 }, receive: { ore: 1 }, anyCount: 0, target: 0 });
+    const offer = s.tradeOffers[0];
+    expect(offer.responses[0].status).toBe('pending');
+    expect(s.pending.botTradeOfferedThisTurn).toBe(true);
+    s = applyOrThrow(s, { type: 'respondTradeOffer', offerId: offer.id, responder: 0, accepted: true });
+    expect(s.tradeOffers[0].responses[0].status).toBe('accepted');
+    s = applyOrThrow(s, nextBotAction(s, 1)!);
+    expect(s.tradeOffers).toHaveLength(0);
+    expect(s.players[0].resources).toMatchObject({ wood: 1, ore: 1 });
+    expect(s.log.at(-1)?.message).toContain('traded 1 wood for 1 ore');
+
+    s = setRes(s, 1, { wood: 1 });
+    s = setRes(s, 0, { ore: 1 });
+    s = { ...s, pending: { ...s.pending, botTradeOfferedThisTurn: false } };
+    s = applyOrThrow(s, { type: 'createTradeOffer', give: { wood: 1 }, receive: { ore: 1 }, anyCount: 0, target: 0 });
+    s = applyOrThrow(s, { type: 'respondTradeOffer', offerId: s.tradeOffers[0].id, responder: 0, accepted: false });
+    s = applyOrThrow(s, nextBotAction(s, 1)!);
+    expect(s.tradeOffers).toHaveLength(0);
+  });
+
+  it('collects bot responses while waiting, then lets the proposer trade with an accepting bot', () => {
+    let s = autoSetup(game(18));
+    s = { ...s, currentPlayer: 1, phase: 'main' };
+    s = setRes(s, 1, { ore: 1 });
+    s = setRes(s, 0, { sheep: 1 });
+    s = setRes(s, 2, { sheep: 1 });
+    s = applyOrThrow(s, { type: 'createTradeOffer', give: { ore: 1 }, receive: { sheep: 1 }, anyCount: 0, target: 0 });
+    expect(s.tradeOffers[0].responses[0].status).toBe('pending');
+    expect(s.tradeOffers[0].responses[2].status).toBe('accepted');
+    s = applyOrThrow(s, { type: 'respondTradeOffer', offerId: s.tradeOffers[0].id, responder: 0, accepted: false });
+    const choice = nextBotAction(s, 1);
+    expect(choice).toMatchObject({ type: 'completeTradeOffer', partner: 2 });
+    const beforeTrade = s;
+    s = applyOrThrow(s, choice!);
+    expect(deriveFlights(beforeTrade, s, choice!, 0)).toHaveLength(2);
+    expect(s.players[2].resources).toMatchObject({ ore: 1, sheep: 0 });
   });
 });
 
@@ -118,6 +169,20 @@ describe('game rules', () => {
       seed: 5,
     });
     expect(s.players.map((player) => player.color)).toEqual(['green', 'orange']);
+  });
+
+  it('defaults bots to medium and preserves explicit per-bot difficulty', () => {
+    const s = createGame({ players: [{ name: 'You', isBot: false }, { name: 'Easy', isBot: true, botDifficulty: 'easy' }, { name: 'Default', isBot: true }], seed: 6 });
+    expect(s.players.map((player) => player.botDifficulty)).toEqual([null, 'easy', 'medium']);
+  });
+
+  it('does not change a hard bot decision when hidden opponent card types are redistributed', () => {
+    let a = autoSetup(createGame({ players: [{ name: 'You', isBot: false }, { name: 'Hard', isBot: true, botDifficulty: 'hard' }], seed: 22 }));
+    a = { ...a, currentPlayer: 1, phase: 'main' };
+    a = setRes(a, 1, { wood: 2, brick: 2, sheep: 1, wheat: 1 });
+    a = setRes(a, 0, { wood: 2, ore: 2 });
+    const b = setRes(a, 0, { brick: 2, wheat: 2 });
+    expect(nextBotAction(a, 1)).toEqual(nextBotAction(b, 1));
   });
 
   it('rejects direct player trades when that rule is disabled', () => {
@@ -162,6 +227,9 @@ describe('robber', () => {
     expect(totalResources(res.players[0].resources)).toBe(before + 1);
     expect(totalResources(res.players[1].resources)).toBe(2);
     expect(res.phase).toBe('main');
+    expect(res.players[0].stats.robberMoves).toBe(1);
+    expect(res.players[0].stats.successfulSteals).toBe(1);
+    expect(res.players[0].stats.cardsStolen).toBe(1);
   });
 
   it('protects players below 3 VP with Friendly Robber', () => {
@@ -173,6 +241,48 @@ describe('robber', () => {
     s = { ...s, phase: 'moveRobber', currentPlayer: 0, rules: { ...s.rules, friendlyRobber: true } };
     expect(reduce(s, { type: 'moveRobber', tile, stealFrom: victim }).ok).toBe(false);
     expect(reduce(s, { type: 'moveRobber', tile, stealFrom: null }).ok).toBe(true);
+  });
+});
+
+describe('match statistics', () => {
+  it('counts setup pieces but excludes opening-order dice from gameplay rolls', () => {
+    let s = game(31);
+    while (s.phase === 'startingRoll') s = applyOrThrow(s, { type: 'rollForStart' });
+    expect(Object.values(s.diceStats).reduce((sum, count) => sum + count, 0)).toBe(0);
+    s = autoSetup(s);
+    expect(s.players.every((player) => player.stats.settlementsPlaced === 2 && player.stats.roadsPlaced === 2)).toBe(true);
+    s = applyOrThrow(s, { type: 'rollDice' });
+    expect(Object.values(s.diceStats).reduce((sum, count) => sum + count, 0)).toBe(1);
+    expect(s.players[s.currentPlayer].stats.turnsTaken).toBe(1);
+  });
+
+  it('tracks development cards by exact type and records plays separately', () => {
+    let s = autoSetup(game(32));
+    s = applyOrThrow(s, { type: 'debugGrantDevCard', player: 0, card: 'monopoly' });
+    expect(s.players[0].stats.devCardsCollected.monopoly).toBe(1);
+    s = { ...s, currentPlayer: 0, phase: 'main', turn: s.turn + 1 };
+    s = applyOrThrow(s, { type: 'playMonopoly', resource: 'wood' });
+    expect(s.players[0].stats.devCardsPlayed).toBe(1);
+  });
+
+  it('records discarded cards without counting rejected actions', () => {
+    let s = autoSetup(game(33));
+    s = setRes(s, 0, { wood: 8 });
+    s = { ...s, phase: 'discard', pending: { ...s.pending, discards: { 0: 4 } } };
+    expect(reduce(s, { type: 'discard', player: 0, resources: { wood: 3 } }).ok).toBe(false);
+    s = applyOrThrow(s, { type: 'discard', player: 0, resources: { wood: 4 } });
+    expect(s.players[0].stats.cardsDiscarded).toBe(4);
+  });
+
+  it('has a point-source breakdown equal to final victory points', () => {
+    const s = autoSetup(game(34));
+    for (const player of s.players) {
+      const towns = Object.values(s.buildings).filter((piece) => piece.owner === player.id && piece.type === 'settlement').length;
+      const cities = Object.values(s.buildings).filter((piece) => piece.owner === player.id && piece.type === 'city').length;
+      const vpCards = player.devCards.filter((card) => card.type === 'victoryPoint').length;
+      const awards = (s.longestRoad.player === player.id ? 2 : 0) + (s.largestArmy.player === player.id ? 2 : 0);
+      expect(towns + cities * 2 + vpCards + awards).toBe(victoryPoints(s, player.id));
+    }
   });
 });
 
@@ -233,6 +343,18 @@ describe('debug actions', () => {
 });
 
 describe('longest road', () => {
+  it('does not count every branch of a T-junction as one route', () => {
+    const s = game();
+    const junction = s.board.vertices.find((vertex) => vertex.edgeIds.length === 3);
+    expect(junction).toBeDefined();
+
+    const roads = Object.fromEntries(junction!.edgeIds.map((edge) => [edge, 0]));
+    const branched = { ...s, roads };
+
+    expect(junction!.edgeIds).toHaveLength(3);
+    expect(longestRoadLength(branched, 0)).toBe(2);
+  });
+
   it('measures the longest continuous trail', () => {
     // Build a straight chain of roads for player 0 by hand.
     let s = autoSetup(game());
