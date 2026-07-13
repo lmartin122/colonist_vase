@@ -2,6 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Keep the trade-offer rail in the play area, immediately left of the fixed sidebar. */
+.trade-offers-rail {
+  right: 0.75rem;
+}
+
+@media (min-width: 768px) {
+  .trade-offers-rail {
+    right: calc(300px + 0.75rem);
+  }
+}
+
+@media (min-width: 1024px) {
+  .trade-offers-rail {
+    right: calc(330px + 0.75rem);
+  }
+}
+
 :root {
   color-scheme: dark;
   /* Light (warm) theme — dark ink on off-white cards. */
@@ -43,6 +60,45 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   transition: background 0.3s ease;
+}
+
+/* Compact HUD scrollbars that inherit the card palette instead of browser chrome. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--ink) / 0.28) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  margin: 5px;
+  background: transparent;
+}
+
+/* Hide browser arrow buttons so they cannot protrude past rounded HUD surfaces. */
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgb(var(--ink) / 0.28);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--ink) / 0.48);
+  background-clip: padding-box;
 }
 
 /* Prevent iOS text selection / scroll during board drags. */

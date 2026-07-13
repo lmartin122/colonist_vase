@@ -24,12 +24,19 @@ export interface Store {
   thinking: boolean;
   error: string | null;
   theme: Theme;
+  debugEnabled: boolean;
+  debugInfiniteTimer: { player: number; turn: number } | null;
 
   newGame: (config: GameConfig) => void;
+  abandonGame: () => void;
   dispatch: (action: Action) => boolean;
   setBuild: (mode: BuildMode) => void;
   clearError: () => void;
   toggleTheme: () => void;
+  enableDebug: () => void;
+  toggleDebugInfiniteTimer: () => void;
+  fastForwardTurn: () => void;
+  simulatePhase: () => void;
 }
 
 const THEME_KEY = 'cv-theme';
@@ -77,6 +84,11 @@ function automatedActor(game: GameState, humanId: number): number | null {
   return game.players[game.currentPlayer].isBot ? game.currentPlayer : null;
 }
 
+function simulationActor(game: GameState): number {
+  if (game.phase === 'discard') return Number(Object.keys(game.pending.discards)[0]);
+  return game.currentPlayer;
+}
+
 export const useGame = create<Store>((set, get) => {
   async function runBots() {
     if (botRunning) return;
@@ -111,6 +123,22 @@ export const useGame = create<Store>((set, get) => {
     }
   }
 
+  function simulate(continueWhile: (game: GameState) => boolean): void {
+    let current = get().game;
+    if (!current) return;
+    const humanId = get().humanId;
+    for (let steps = 0; steps < 160 && continueWhile(current); steps++) {
+      const action = nextBotAction(current, simulationActor(current));
+      if (!action) break;
+      const result = reduce(current, action);
+      if (!result.ok) break;
+      emitFlights(deriveFlights(current, result.state, action, humanId));
+      current = result.state;
+      set({ game: current, build: null, error: null });
+    }
+    void runBots();
+  }
+
   return {
     game: null,
     humanId: 0,
@@ -118,10 +146,16 @@ export const useGame = create<Store>((set, get) => {
     thinking: false,
     error: null,
     theme: initialTheme(),
+    debugEnabled: false,
+    debugInfiniteTimer: null,
 
     newGame(config) {
-      set({ game: createGame(config), build: null, error: null, humanId: 0 });
+      set({ game: createGame(config), build: null, error: null, humanId: 0, debugInfiniteTimer: null });
       void runBots();
+    },
+
+    abandonGame() {
+      set({ game: null, build: null, thinking: false, error: null, debugInfiniteTimer: null });
     },
 
     dispatch(action) {
@@ -151,6 +185,35 @@ export const useGame = create<Store>((set, get) => {
       if (typeof window !== 'undefined') localStorage.setItem(THEME_KEY, theme);
       applyTheme(theme);
       set({ theme });
+    },
+
+    enableDebug() {
+      set({ debugEnabled: true });
+    },
+
+    toggleDebugInfiniteTimer() {
+      const game = get().game;
+      if (!game) return;
+      const current = get().debugInfiniteTimer;
+      set({ debugInfiniteTimer: current?.player === game.currentPlayer && current.turn === game.turn ? null : { player: game.currentPlayer, turn: game.turn } });
+    },
+
+    fastForwardTurn() {
+      const game = get().game;
+      if (!game) return;
+      if (game.phase === 'startingRoll' || game.phase === 'setup' || game.phase === 'discard') {
+        simulate((current) => current.phase === game.phase);
+        return;
+      }
+      const player = game.currentPlayer;
+      simulate((current) => current.phase !== 'gameOver' && current.currentPlayer === player);
+    },
+
+    simulatePhase() {
+      const game = get().game;
+      if (!game) return;
+      const phase = game.phase;
+      simulate((current) => current.phase === phase);
     },
   };
 });

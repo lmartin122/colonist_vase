@@ -45,6 +45,7 @@ export const PLAYER_HEX: Record<PlayerColor, number> = {
   blue: 0x2e7be4,
   orange: 0xe8862a,
   green: 0x3c9e4e,
+  black: 0x242424,
 };
 
 export const PLAYER_CSS: Record<PlayerColor, string> = {
@@ -52,6 +53,7 @@ export const PLAYER_CSS: Record<PlayerColor, string> = {
   blue: '#2E7BE4',
   orange: '#E8862A',
   green: '#3C9E4E',
+  black: '#242424',
 };
 
 export const OCEAN = 0x2e6e96;

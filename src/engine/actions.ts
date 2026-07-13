@@ -1,4 +1,4 @@
-import type { Resource } from './types';
+import type { DevCardType, Resource } from './types';
 
 /**
  * Every mutation to the game goes through one of these actions and the pure
@@ -29,6 +29,13 @@ export type Action =
   // Trading
   | { type: 'bankTrade'; give: Resource; receive: Resource }
   | { type: 'playerTrade'; partner: number; give: Partial<Record<Resource, number>>; receive: Partial<Record<Resource, number>> }
+  | { type: 'createTradeOffer'; give: Partial<Record<Resource, number>>; receive: Partial<Record<Resource, number>>; anyCount: number }
+  | { type: 'completeTradeOffer'; offerId: number; partner: number }
+  | { type: 'cancelTradeOffer'; offerId: number }
+  // Debug-only developer tools. Kept in the reducer so debug state changes remain deterministic.
+  | { type: 'debugAddResources'; player: number; resources: Partial<Record<Resource, number>> }
+  | { type: 'debugGrantDevCard'; player: number; card: DevCardType }
+  | { type: 'debugTriggerRobber' }
   // Turn end
   | { type: 'endTurn' };
 

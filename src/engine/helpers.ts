@@ -92,6 +92,25 @@ export function resourceValue(r: Resource): number {
   return weights[r];
 }
 
+/** Deterministic value of a resource bundle, shared by bots and trade offers. */
+export function tradeValue(bag: Partial<Record<Resource, number>>): number {
+  return RESOURCES.reduce((sum, resource) => sum + (bag[resource] ?? 0) * resourceValue(resource), 0);
+}
+
+/** Whether an AI-controlled player will accept a proposed player trade. */
+export function botAcceptsTrade(
+  state: GameState,
+  botId: number,
+  offered: Partial<Record<Resource, number>>,
+  requested: Partial<Record<Resource, number>>,
+): boolean {
+  const bot = state.players[botId];
+  if (!canAfford(bot.resources, requested)) return false;
+  const gain = tradeValue(offered);
+  const loss = tradeValue(requested);
+  return gain > 0 && loss > 0 && gain >= loss * 1.1;
+}
+
 // --- Misc ------------------------------------------------------------------
 
 export function currentPlayer(state: GameState): Player {

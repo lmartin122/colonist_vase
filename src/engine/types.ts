@@ -64,7 +64,7 @@ export interface Board {
 // ---------------------------------------------------------------------------
 
 export type BuildingType = 'settlement' | 'city';
-export type PlayerColor = 'red' | 'blue' | 'orange' | 'green';
+export type PlayerColor = 'red' | 'blue' | 'orange' | 'green' | 'black';
 
 export interface Building {
   type: BuildingType;
@@ -145,8 +145,27 @@ export interface GameState {
     hasRolled: boolean;
   };
 
+  /** Player trade offers created during the active turn. */
+  tradeOffers: TradeOffer[];
+  nextTradeOfferId: number;
+
   winner: number | null;
   log: LogEntry[];
+}
+
+export interface TradeOfferResponse {
+  accepted: boolean;
+  /** Resource chosen by the accepting player for each wildcard request. */
+  wildcardResource: Resource | null;
+}
+
+export interface TradeOffer {
+  id: number;
+  proposer: number;
+  give: Partial<Record<Resource, number>>;
+  receive: Partial<Record<Resource, number>>;
+  anyCount: number;
+  responses: Record<number, TradeOfferResponse>;
 }
 
 export interface GameRules {

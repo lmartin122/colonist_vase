@@ -1,4 +1,4 @@
-import type { PlayerColor, Resource, TileType } from './engine/types';
+import type { DevCardType, PlayerColor, Resource, TileType } from './engine/types';
 
 /**
  * Central registry of the SVG art (served from /public/assets). One source of
@@ -43,6 +43,13 @@ export const CARD_HIDDEN = `${BASE}/card_hidden_icon.svg`;
 export const CARD_HIDDEN_WARNING = `${BASE}/card_hidden_warning_icon.svg`;
 export const CARD_DEV_BACK = `${BASE}/card_hidden_development_icon.svg`;
 export const CARD_DEV_ROBBER = `${BASE}/card_development_robber.svg`;
+export const DEV_CARD_ART: Record<DevCardType, string> = {
+  knight: CARD_DEV_ROBBER,
+  monopoly: `${BASE}/card_development_monopoly.svg`,
+  roadBuilding: `${BASE}/card_development_roadbuilding.svg`,
+  yearOfPlenty: `${BASE}/card_development_yearofplenty.svg`,
+  victoryPoint: `${BASE}/card_development_vp.svg`,
+};
 
 /** Award / stat trophies for the player panels (plain vs. held-highlight). */
 export const LARGEST_ARMY = `${BASE}/largest_army_icon.svg`;
@@ -60,7 +67,7 @@ export function diceAsset(value: number): string {
 
 /** All texture URLs the board renderer must preload before drawing. */
 export function boardTextureUrls(): string[] {
-  const colors: PlayerColor[] = ['red', 'blue', 'orange', 'green'];
+  const colors: PlayerColor[] = ['red', 'blue', 'orange', 'green', 'black'];
   const urls: string[] = [];
   for (const url of Object.values(HEX_ASSET)) if (url) urls.push(url);
   for (const c of colors) urls.push(settlementAsset(c), cityAsset(c), roadAsset(c));

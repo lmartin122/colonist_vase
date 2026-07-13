@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react';
 import { Application } from 'pixi.js';
+import type { Action } from '../engine/actions';
 import type { Board } from '../engine/types';
 import { BoardRenderer } from '../render/BoardRenderer';
 import { setTileLocator } from '../render/boardAnchors';
 import { loadBoardTextures } from '../render/textures';
+import { PLAYER_CSS } from '../render/palette';
 import { deriveInteraction } from '../state/interaction';
 import { useGame } from '../state/store';
 
@@ -18,12 +20,19 @@ export function GameCanvas() {
   const lastBoard = useRef<Board | null>(null);
   const [ready, setReady] = useState(false);
   const [panned, setPanned] = useState(false);
+  const [zoomed, setZoomed] = useState(false);
+  const [robberChoice, setRobberChoice] = useState<{ tile: number; action: Extract<Action, { type: 'moveRobber' | 'playKnight' }>['type']; victims: number[] } | null>(null);
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; x: number; y: number; moved: boolean } | null>(null);
 
   const game = useGame((s) => s.game);
   const build = useGame((s) => s.build);
   const humanId = useGame((s) => s.humanId);
   const dispatch = useGame((s) => s.dispatch);
+  const requestRobberVictim = useCallback((tile: number, action: 'moveRobber' | 'playKnight', victims: number[]) => {
+    setRobberChoice({ tile, action, victims });
+  }, []);
+
+  const sidebarInset = (width: number) => width >= 1024 ? 330 : width >= 768 ? 300 : 0;
 
   // Initialise Pixi once.
   useEffect(() => {
@@ -54,11 +63,14 @@ export function GameCanvas() {
       }
       const renderer = new BoardRenderer(app, textures);
       renderer.setBottomInset(112);
+      renderer.setRightInset(sidebarInset(instance.screen.width));
       rendererRef.current = renderer;
       setTileLocator((id) => renderer.tileClientPosition(id));
       app.renderer.on('resize', () => {
+        renderer.setRightInset(sidebarInset(instance.screen.width));
         renderer.fit();
         setPanned(false);
+        setZoomed(false);
       });
       setReady(true);
     })();
@@ -87,8 +99,8 @@ export function GameCanvas() {
   useEffect(() => {
     const renderer = rendererRef.current;
     if (!renderer) return;
-    renderer.setInteraction(deriveInteraction(game, build, humanId, dispatch));
-  }, [game, build, humanId, dispatch, ready]);
+    renderer.setInteraction(robberChoice ? null : deriveInteraction(game, build, humanId, dispatch, requestRobberVictim));
+  }, [game, build, humanId, dispatch, ready, requestRobberVictim, robberChoice]);
 
   const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
@@ -126,11 +138,21 @@ export function GameCanvas() {
   const recenter = () => {
     rendererRef.current?.fit();
     setPanned(false);
+    setZoomed(false);
+  };
+  const zoom = (factor: number) => {
+    rendererRef.current?.zoomBy(factor);
+    setZoomed(true);
+  };
+  const zoomWithWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    zoom(event.deltaY < 0 ? 1.12 : 1 / 1.12);
   };
 
-  // Leave room for the right sidebar on md+ so the board centers in the play area.
+  // The canvas spans the full viewport so panned board content can travel behind HUD panels.
+  // BoardRenderer still reserves the sidebar while fitting the initial board position.
   return (
-    <div className="absolute inset-y-0 left-0 right-0 md:right-[300px] lg:right-[330px]">
+    <div className="absolute inset-0">
       <div
         ref={hostRef}
         className="absolute inset-0 cursor-grab active:cursor-grabbing"
@@ -138,22 +160,56 @@ export function GameCanvas() {
         onPointerMove={movePan}
         onPointerUp={endPan}
         onPointerCancel={endPan}
+        onWheel={zoomWithWheel}
       />
-      {panned && (
-        <button
-          type="button"
-          onClick={recenter}
-          aria-label="Recenter board"
-          title="Recenter board"
-          className="pointer-events-auto absolute right-3 top-3 z-10 flex h-10 w-10 items-center justify-center rounded-xl bg-card text-ink shadow-panel ring-1 ring-black/5 transition hover:-translate-y-0.5 hover:bg-card-alt dark:ring-white/15"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true" className="h-6 w-6 fill-none stroke-current" strokeWidth="2" strokeLinecap="round">
-            <circle cx="12" cy="12" r="6" />
-            <circle cx="12" cy="12" r="1.5" className="fill-current stroke-none" />
-            <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
-          </svg>
-        </button>
+      <div className="pointer-events-auto absolute left-[6.5rem] top-3 z-10 flex gap-1.5 sm:left-28 sm:top-4">
+        <MapControl label="Zoom in" onClick={() => zoom(1.2)}>+</MapControl>
+        <MapControl label="Zoom out" onClick={() => zoom(1 / 1.2)}>−</MapControl>
+        {(panned || zoomed) && (
+          <MapControl label="Recenter board" onClick={recenter}>
+            <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current" strokeWidth="2" strokeLinecap="round">
+              <circle cx="12" cy="12" r="6" />
+              <circle cx="12" cy="12" r="1.5" className="fill-current stroke-none" />
+              <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+            </svg>
+          </MapControl>
+        )}
+      </div>
+      {robberChoice && game && (
+        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center p-4">
+          <div className="pointer-events-auto w-full max-w-md rounded-2xl bg-card p-4 text-ink shadow-pop ring-1 ring-black/10 dark:ring-white/15">
+            <h2 className="font-display text-lg font-extrabold">Choose a player to rob</h2>
+            <p className="mt-1 text-sm text-ink-soft">Select one opponent next to the robber.</p>
+            <div className="mt-3 flex flex-wrap justify-center gap-2">
+              {robberChoice.victims.map((playerId) => (
+                <button
+                  key={playerId}
+                  type="button"
+                  onClick={() => {
+                    dispatch({ type: robberChoice.action, tile: robberChoice.tile, stealFrom: playerId });
+                    setRobberChoice(null);
+                  }}
+                  className="flex min-w-24 flex-1 flex-col items-center gap-1 rounded-xl bg-card-alt px-3 py-3 text-center text-sm font-extrabold transition hover:-translate-y-0.5 hover:shadow-soft"
+                >
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full text-lg ring-2 ring-white" style={{ background: PLAYER_CSS[game.players[playerId].color] }}>
+                    {game.players[playerId].isBot ? '🤖' : '🎩'}
+                  </span>
+                  <span>{game.players[playerId].name}</span>
+                </button>
+              ))}
+            </div>
+            <button type="button" onClick={() => setRobberChoice(null)} className="mt-3 w-full text-center text-xs font-bold text-ink-faint underline">Choose another hex</button>
+          </div>
+        </div>
       )}
     </div>
+  );
+}
+
+function MapControl({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button type="button" onClick={onClick} aria-label={label} title={label} className="flex h-9 w-9 items-center justify-center rounded-xl bg-card text-lg font-extrabold text-ink shadow-panel ring-1 ring-black/5 transition hover:-translate-y-0.5 hover:bg-card-alt dark:ring-white/15">
+      {children}
+    </button>
   );
 }
