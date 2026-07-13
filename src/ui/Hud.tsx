@@ -1,19 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CARD_DEV_BACK, RESOURCE_CARD, TRADE_ICON, cityAsset, diceAsset, roadAsset, settlementAsset } from '../assets';
+import { CARD_DEV_BACK, DEV_CARD_ART, RESOURCE_CARD, TRADE_ICON, cityAsset, diceAsset, roadAsset, settlementAsset } from '../assets';
 import { nextBotAction } from '../ai/bot';
 import { COSTS } from '../engine/constants';
 import { canAfford, publicVictoryPoints, totalResources, victoryPoints } from '../engine/helpers';
 import type { DevCardType, GameState, Player, Resource } from '../engine/types';
-import { RESOURCES } from '../engine/types';
+import { emptyBank, RESOURCES } from '../engine/types';
 import { PLAYER_CSS } from '../render/palette';
 import { useGame } from '../state/store';
 import { CardFlights } from './CardFlights';
+import { DebugPanel } from '../debug/DebugPanel';
 import { Sidebar } from './Sidebar';
 import { TradePanel } from './TradePanel';
+import { TradeOffersPanel } from './TradeOffersPanel';
+import { StackedCard } from './StackedCard';
 
 type Bag = Record<Resource, number>;
-const zeroBag = (): Bag => ({ wood: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 });
+const zeroBag = emptyBank;
 
 /** A resource shown as its card art — used everywhere a resource is depicted. */
 function ResCard({ resource, size = 16 }: { resource: Resource; size?: number }) {
@@ -36,6 +39,7 @@ export function Hud() {
       {/* Play area (left of the sidebar on md+). */}
       <div className="absolute inset-y-0 left-0 right-0 md:right-[300px] lg:right-[330px]">
         <TopBar game={game} />
+        <AbandonButton />
         <PhaseGuide game={game} />
         <div className="md:hidden">
           <PlayersColumn game={game} />
@@ -43,9 +47,11 @@ export function Hud() {
         <HumanDock game={game} />
       </div>
       <Sidebar game={game} />
+      <TradeOffersPanel game={game} />
       <VictoryOverlay game={game} />
       <ErrorToast />
       <CardFlights />
+      <DebugPanel />
     </div>
   );
 }
@@ -88,6 +94,58 @@ function TopBar({ game }: { game: GameState }) {
   );
 }
 
+function AbandonButton() {
+  const abandonGame = useGame((s) => s.abandonGame);
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setConfirming(true)}
+        title="Abandon game"
+        aria-label="Abandon game"
+        className="pointer-events-auto absolute left-2 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-xl bg-card text-ink shadow-panel ring-1 ring-black/5 transition hover:bg-p-red hover:text-white sm:left-3 sm:top-4 dark:ring-white/15"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true" className="h-[18px] w-[18px] fill-none stroke-current" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h5" />
+          <path d="m14 8 4 4-4 4M18 12H9" />
+        </svg>
+      </button>
+      <AnimatePresence>
+        {confirming && (
+          <motion.div
+            className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setConfirming(false);
+            }}
+          >
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="abandon-game-title"
+              initial={{ opacity: 0, y: 12, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.96 }}
+              className={`w-full max-w-sm p-5 ${CARD}`}
+            >
+              <h2 id="abandon-game-title" className="font-display text-xl font-extrabold">Abandon this game?</h2>
+              <p className="mt-2 text-sm text-ink-soft">Your current game will end and you will return to the setup screen.</p>
+              <div className="mt-5 flex justify-end gap-2">
+                <button type="button" onClick={() => setConfirming(false)} className={`${BTN_BASE} bg-card-alt px-4 py-2 text-sm text-ink hover:bg-ink/10`}>Keep playing</button>
+                <button type="button" onClick={abandonGame} className={`${BTN_BASE} bg-p-red px-4 py-2 text-sm text-white hover:brightness-110`}>Abandon game</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
+}
+
 function PhaseGuide({ game }: { game: GameState }) {
   const humanId = useGame((s) => s.humanId);
   const [visibleTitle, setVisibleTitle] = useState<string | null>(null);
@@ -101,6 +159,8 @@ function PhaseGuide({ game }: { game: GameState }) {
       ? 'Roll the dice to see who starts'
       : game.phase === 'setup'
         ? 'Starting Placement'
+        : game.phase === 'moveRobber'
+          ? 'Place the Robber'
         : null;
 
   useEffect(() => {
@@ -182,7 +242,7 @@ function PlayerCard({ game, player, isHuman, active }: { game: GameState; player
       </div>
       <div className="mt-1.5 flex items-center gap-2.5 pl-1 text-[11px] font-semibold text-ink-soft">
         {shownDice && <PlayerDice dice={shownDice} compact />}
-        <span className="inline-flex items-center gap-1" title="cards in hand">🃏 {cards}</span>
+        <span data-player-cards={player.id} className="inline-flex items-center gap-1" title="cards in hand">🃏 {cards}</span>
         <span className="inline-flex items-center gap-1" title="development cards">📜 {devCount}</span>
         <span className="inline-flex items-center gap-1" title="knights played">🛡️ {player.knightsPlayed}</span>
         <span className="ml-auto flex gap-1">
@@ -223,18 +283,50 @@ function HumanDock({ game }: { game: GameState }) {
   const dispatch = useGame((s) => s.dispatch);
   const build = useGame((s) => s.build);
   const setBuild = useGame((s) => s.setBuild);
+  const debugInfiniteTimer = useGame((s) => s.debugInfiniteTimer);
   const [tradeOpen, setTradeOpen] = useState(false);
+  const [tradeGive, setTradeGive] = useState<Bag>(zeroBag);
   const me = game.players[humanId];
   const myTurn = game.currentPlayer === humanId;
   const inMain = myTurn && game.phase === 'main';
   const canRoll = myTurn && game.phase === 'roll';
   const canStartRoll = myTurn && game.phase === 'startingRoll';
+  const mustResolveAction = game.pending.freeRoads > 0 || build?.kind === 'knight';
+  const canTakeRoll = canRoll && !mustResolveAction;
   const toggle = (kind: 'road' | 'settlement' | 'city') =>
     setBuild(build?.kind === kind ? null : { kind });
+
+  useEffect(() => {
+    if (!inMain) {
+      setTradeOpen(false);
+      setTradeGive(zeroBag());
+    }
+  }, [inMain]);
+
+  const addTradeCard = (resource: Resource) => {
+    if (!inMain) return;
+    setTradeGive((current) => current[resource] >= me.resources[resource] ? current : { ...current, [resource]: current[resource] + 1 });
+    setTradeOpen(true);
+  };
+  const removeTradeCard = (resource: Resource) => setTradeGive((current) => ({ ...current, [resource]: Math.max(0, current[resource] - 1) }));
+  const openTrade = () => {
+    if (tradeOpen) {
+      closeTrade();
+      return;
+    }
+    setTradeGive(zeroBag());
+    setTradeOpen(true);
+  };
+  const closeTrade = () => {
+    setTradeOpen(false);
+    setTradeGive(zeroBag());
+  };
+  const resetTradeCards = () => setTradeGive(zeroBag());
 
   // --- Discard flow: select cards in-hand, confirm, or auto-drop on timeout ---
   const required = game.phase === 'discard' ? game.pending.discards[humanId] ?? 0 : 0;
   const discarding = required > 0;
+  const infiniteTime = debugInfiniteTimer?.player === game.currentPlayer && debugInfiniteTimer.turn === game.turn;
   const [sel, setSel] = useState<Bag>(zeroBag);
   const [remaining, setRemaining] = useState<number>(game.rules.turnTimer);
   const selectedTotal = RESOURCES.reduce((s, r) => s + sel[r], 0);
@@ -246,7 +338,7 @@ function HumanDock({ game }: { game: GameState }) {
   requiredRef.current = required;
 
   useEffect(() => {
-    if (!discarding) return;
+    if (!discarding || infiniteTime) return;
     setSel(zeroBag());
     setRemaining(game.rules.turnTimer);
     const started = Date.now();
@@ -260,7 +352,7 @@ function HumanDock({ game }: { game: GameState }) {
     }, 250);
     return () => clearInterval(id);
     // Re-arm whenever a fresh discard requirement appears.
-  }, [discarding, required, humanId, dispatch, game.rules.turnTimer]);
+  }, [discarding, required, humanId, dispatch, game.rules.turnTimer, infiniteTime]);
 
   const toggleDiscard = (r: Resource, delta: number) =>
     setSel((prev) => {
@@ -279,19 +371,17 @@ function HumanDock({ game }: { game: GameState }) {
           selected={selectedTotal}
           required={required}
           remaining={remaining}
+          infinite={infiniteTime}
           onConfirm={() => dispatch({ type: 'discard', player: humanId, resources: sel })}
         />
       )}
-      {myTurn && !discarding && <DevCardBar game={game} me={me} />}
-
-
       <div className="flex w-full items-stretch gap-2">
         {/* Resource hand — fanned cards, grouped by resource (click to discard) */}
         <div
           data-hand-panel
           className={`flex min-h-[82px] basis-1/3 items-center gap-2 overflow-x-auto px-3 pb-2 pt-4 ${CARD} ${discarding ? 'ring-2 ring-amber-400' : ''}`}
         >
-          <ResourceHand me={me} discard={discarding ? { sel, onToggle: toggleDiscard } : undefined} />
+          <ResourceHand game={game} me={me} discard={discarding ? { sel, onToggle: toggleDiscard } : undefined} tradeSelected={tradeOpen ? tradeGive : undefined} onCardClick={inMain ? addTradeCard : undefined} />
         </div>
 
         {/* Action menu */}
@@ -301,10 +391,10 @@ function HumanDock({ game }: { game: GameState }) {
               dice={game.dice}
               onRoll={canStartRoll
                 ? () => dispatch({ type: 'rollForStart' })
-                : canRoll ? () => dispatch({ type: 'rollDice' }) : undefined}
+                : canTakeRoll ? () => dispatch({ type: 'rollDice' }) : undefined}
             />
           )}
-            <ActionButton img={TRADE_ICON} label="Trade" onClick={() => setTradeOpen(true)} disabled={!inMain} />
+            <ActionButton img={TRADE_ICON} label="Trade" onClick={openTrade} disabled={!inMain} />
             <ActionButton
               img={CARD_DEV_BACK}
               label="Dev"
@@ -339,16 +429,17 @@ function HumanDock({ game }: { game: GameState }) {
             <div className="mx-0.5 w-px self-stretch bg-black/10 dark:bg-white/15" />
             {canRoll || canStartRoll ? (
               <button
+                disabled={mustResolveAction}
                 onClick={() => dispatch({ type: canStartRoll ? 'rollForStart' : 'rollDice' })}
-                className={`${BTN_BASE} flex-1 bg-p-green px-4 text-base text-white shadow-soft hover:-translate-y-0.5 hover:brightness-105`}
+                className={`${BTN_BASE} flex-1 px-4 text-base ${mustResolveAction ? 'bg-card-alt text-ink-faint' : 'bg-p-green text-white shadow-soft hover:-translate-y-0.5 hover:brightness-105'}`}
               >
                 🎲<span className="ml-1 hidden sm:inline">{canStartRoll ? 'Roll for first' : 'Roll'}</span>
               </button>
             ) : (
               <button
-                disabled={!inMain}
+                disabled={!inMain || mustResolveAction}
                 onClick={() => dispatch({ type: 'endTurn' })}
-                className={`${BTN_BASE} flex-1 px-4 text-base ${inMain ? 'bg-p-green text-white shadow-soft hover:-translate-y-0.5 hover:brightness-105' : 'bg-card-alt text-ink-faint'}`}
+                className={`${BTN_BASE} flex-1 px-4 text-base ${inMain && !mustResolveAction ? 'bg-p-green text-white shadow-soft hover:-translate-y-0.5 hover:brightness-105' : 'bg-card-alt text-ink-faint'}`}
               >
                 End<span className="ml-1 hidden sm:inline">Turn</span>
               </button>
@@ -356,7 +447,7 @@ function HumanDock({ game }: { game: GameState }) {
           </div>
       </div>
 
-      {tradeOpen && inMain && <TradePanel game={game} onClose={() => setTradeOpen(false)} />}
+      {tradeOpen && inMain && <TradePanel game={game} give={tradeGive} onRemoveGive={removeTradeCard} onResetGive={resetTradeCards} onClose={closeTrade} />}
 
       <AnimatePresence>
         {build && (
@@ -375,15 +466,17 @@ function HumanDock({ game }: { game: GameState }) {
 function TurnCountdown({ game }: { game: GameState }) {
   const humanId = useGame((s) => s.humanId);
   const dispatch = useGame((s) => s.dispatch);
+  const debugInfiniteTimer = useGame((s) => s.debugInfiniteTimer);
   const humanMustAct = game.currentPlayer === humanId && game.phase !== 'discard';
   const seconds = game.rules.turnTimer;
+  const infiniteTime = debugInfiniteTimer?.player === game.currentPlayer && debugInfiniteTimer.turn === game.turn;
   const [remaining, setRemaining] = useState<number>(seconds);
   const gameRef = useRef(game);
   gameRef.current = game;
   const actionKey = `${game.phase}-${game.currentPlayer}-${game.turn}-${game.setup?.step ?? ''}-${game.setup?.lastSettlement ?? ''}-${game.pending.discards[humanId] ?? ''}`;
 
   useEffect(() => {
-    if (!humanMustAct || game.phase === 'gameOver') return;
+    if (!humanMustAct || infiniteTime || game.phase === 'gameOver') return;
     setRemaining(seconds);
     const started = Date.now();
     const interval = setInterval(() => {
@@ -400,12 +493,12 @@ function TurnCountdown({ game }: { game: GameState }) {
       }
     }, 250);
     return () => clearInterval(interval);
-  }, [actionKey, dispatch, humanId, humanMustAct, seconds]);
+  }, [actionKey, dispatch, humanId, humanMustAct, infiniteTime, seconds]);
 
   if (!humanMustAct || game.phase === 'gameOver') return null;
   return (
     <span className={`ml-1 rounded-lg px-2 py-1 text-xs font-extrabold tabular-nums ${remaining <= 5 ? 'bg-p-red text-white' : 'bg-card-alt text-ink'}`}>
-      {remaining}s
+      {infiniteTime ? '∞' : `${remaining}s`}
     </span>
   );
 }
@@ -443,8 +536,8 @@ function RollDiceDisplay({ dice, onRoll }: { dice: [number, number] | null; onRo
 }
 
 /** Banner shown above the hand while the human must discard cards. */
-function DiscardBanner({ selected, required, remaining, onConfirm }: {
-  selected: number; required: number; remaining: number; onConfirm: () => void;
+function DiscardBanner({ selected, required, remaining, infinite, onConfirm }: {
+  selected: number; required: number; remaining: number; infinite: boolean; onConfirm: () => void;
 }) {
   const done = selected === required;
   const low = remaining <= 5;
@@ -458,7 +551,7 @@ function DiscardBanner({ selected, required, remaining, onConfirm }: {
     >
       <span>Select cards to discard ({selected}/{required})</span>
       <span className={`rounded-full px-2 py-0.5 font-mono tabular-nums ${low ? 'bg-p-red text-white' : 'bg-black/15'}`}>
-        0:{String(remaining).padStart(2, '0')}
+        {infinite ? '∞' : `0:${String(remaining).padStart(2, '0')}`}
       </span>
       <button
         disabled={!done}
@@ -475,38 +568,33 @@ function DiscardBanner({ selected, required, remaining, onConfirm }: {
 type DiscardCtl = { sel: Bag; onToggle: (r: Resource, delta: number) => void };
 
 /** The human's hand: one fanned pile per held resource, using the card art. */
-function ResourceHand({ me, discard }: { me: Player; discard?: DiscardCtl }) {
-  const present = RESOURCES.filter((r) => me.resources[r] > 0);
-  if (present.length === 0) {
+function ResourceHand({ game, me, discard, tradeSelected, onCardClick }: { game: GameState; me: Player; discard?: DiscardCtl; tradeSelected?: Bag; onCardClick?: (resource: Resource) => void }) {
+  const present = RESOURCES.filter((r) => me.resources[r] - (tradeSelected?.[r] ?? 0) > 0);
+  const hasDevCards = me.devCards.some((card) => !card.played);
+  if (present.length === 0 && !hasDevCards) {
     return <span className="w-full text-center text-sm font-semibold text-ink-faint">No resources</span>;
   }
   return (
     <>
       {present.map((r) => (
-        <FannedStack
-          key={r}
-          res={r}
-          src={RESOURCE_CARD[r]}
-          count={me.resources[r]}
-          title={r}
-          selected={discard ? discard.sel[r] : 0}
-          onToggle={discard ? (delta) => discard.onToggle(r, delta) : undefined}
-        />
+        discard ? <FannedStack key={r} res={r} src={RESOURCE_CARD[r]} count={me.resources[r] - (tradeSelected?.[r] ?? 0)} title={r} selected={discard.sel[r]} onToggle={(delta) => discard.onToggle(r, delta)} />
+          : <StackedCard key={r} handStackId={r} src={RESOURCE_CARD[r]} alt={r} count={me.resources[r] - (tradeSelected?.[r] ?? 0)} direction="left" maxVisible={6} overlap={7} onClick={onCardClick ? () => onCardClick(r) : undefined} />
       ))}
+      {!discard && <DevelopmentCards game={game} me={me} />}
     </>
   );
 }
 
-function FannedStack({ src, count, title, res, selected = 0, onToggle }: {
-  src: string; count: number; title: string; res?: string; selected?: number; onToggle?: (delta: number) => void;
+function FannedStack({ src, count, title, res, selected = 0, onToggle, onClick }: {
+  src: string; count: number; title: string; res?: string; selected?: number; onToggle?: (delta: number) => void; onClick?: () => void;
 }) {
   const cardW = 40;
   // Tighten the overlap as a pile grows so wide hands stay compact.
   const offset = count > 6 ? Math.max(11, 100 / count) : 18;
   const width = cardW + (count - 1) * offset;
-  const clickable = !!onToggle;
+  const clickable = !!onToggle || !!onClick;
   return (
-    <div data-hand={res} className="relative shrink-0" style={{ width, height: 58 }} title={`${count} ${title}`}>
+    <div data-hand-stack={res} className="relative shrink-0" style={{ width, height: 58 }} title={`${count} ${title}`}>
       {Array.from({ length: count }).map((_, i) => {
         const isSel = clickable && i >= count - selected;
         return (
@@ -515,7 +603,7 @@ function FannedStack({ src, count, title, res, selected = 0, onToggle }: {
             src={src}
             alt=""
             draggable={false}
-            onClick={onToggle ? () => onToggle(isSel ? -1 : 1) : undefined}
+            onClick={onToggle ? () => onToggle(isSel ? -1 : 1) : onClick}
             className={`absolute bottom-0 rounded-[5px] shadow-sm transition-transform ${
               isSel ? 'ring-2 ring-amber-400' : 'ring-1 ring-black/10'
             } ${clickable ? 'cursor-pointer' : ''}`}
@@ -550,6 +638,7 @@ function ActionButton({ img, label, cost, onClick, disabled, active }: {
   const title = cost ? `${label} — ${RESOURCES.filter((r) => cost[r]).map((r) => `${cost[r]} ${r}`).join(', ')}` : label;
   return (
     <button
+      data-dock-action={label}
       disabled={disabled}
       onClick={onClick}
       title={title}
@@ -584,11 +673,13 @@ function Hint({ children }: { children: React.ReactNode }) {
   );
 }
 
-function DevCardBar({ game, me }: { game: GameState; me: Player }) {
+/** Played from the same hand as resource cards; victory cards remain informational. */
+function DevelopmentCards({ game, me }: { game: GameState; me: Player }) {
   const dispatch = useGame((s) => s.dispatch);
   const setBuild = useGame((s) => s.setBuild);
+  const humanId = useGame((s) => s.humanId);
   const [picker, setPicker] = useState<null | 'monopoly' | 'yop'>(null);
-  const canPlay = (game.phase === 'roll' || game.phase === 'main') && !game.pending.playedDevThisTurn;
+  const canPlay = game.currentPlayer === humanId && (game.phase === 'roll' || game.phase === 'main') && !game.pending.playedDevThisTurn;
 
   const counts: Record<DevCardType, { total: number; playable: number }> = {
     knight: { total: 0, playable: 0 },
@@ -606,13 +697,12 @@ function DevCardBar({ game, me }: { game: GameState; me: Player }) {
   const play = (type: DevCardType) => canPlay && counts[type].playable > 0;
 
   return (
-    <div className={`relative flex items-center gap-1.5 px-2.5 py-1.5 text-xs ${CARD}`}>
-      <span className="font-bold text-ink-faint">Cards:</span>
-      {counts.knight.total > 0 && <DevChip label={`🛡️ Knight ×${counts.knight.total}`} enabled={play('knight')} onClick={() => setBuild({ kind: 'knight' })} />}
-      {counts.roadBuilding.total > 0 && <DevChip label={`🛣️ Roads ×${counts.roadBuilding.total}`} enabled={play('roadBuilding')} onClick={() => dispatch({ type: 'playRoadBuilding' })} />}
-      {counts.monopoly.total > 0 && <DevChip label={`💰 Monopoly ×${counts.monopoly.total}`} enabled={play('monopoly')} onClick={() => setPicker('monopoly')} />}
-      {counts.yearOfPlenty.total > 0 && <DevChip label={`🎁 Plenty ×${counts.yearOfPlenty.total}`} enabled={play('yearOfPlenty')} onClick={() => setPicker('yop')} />}
-      {counts.victoryPoint.total > 0 && <span className="font-semibold text-ink-soft">⭐ VP ×{counts.victoryPoint.total}</span>}
+    <div className="relative flex shrink-0 items-center gap-2 border-l border-ink/10 pl-2 dark:border-white/10">
+      {counts.knight.total > 0 && <DevHandCard type="knight" count={counts.knight.total} enabled={play('knight')} onClick={() => setBuild({ kind: 'knight' })} />}
+      {counts.roadBuilding.total > 0 && <DevHandCard type="roadBuilding" count={counts.roadBuilding.total} enabled={play('roadBuilding')} onClick={() => dispatch({ type: 'playRoadBuilding' })} />}
+      {counts.monopoly.total > 0 && <DevHandCard type="monopoly" count={counts.monopoly.total} enabled={play('monopoly')} onClick={() => setPicker('monopoly')} />}
+      {counts.yearOfPlenty.total > 0 && <DevHandCard type="yearOfPlenty" count={counts.yearOfPlenty.total} enabled={play('yearOfPlenty')} onClick={() => setPicker('yop')} />}
+      {counts.victoryPoint.total > 0 && <DevHandCard type="victoryPoint" count={counts.victoryPoint.total} enabled={false} />}
 
       {picker === 'monopoly' && (
         <ResourcePicker count={1} title="Monopolise a resource" onPick={(rs) => { dispatch({ type: 'playMonopoly', resource: rs[0] }); setPicker(null); }} onClose={() => setPicker(null)} />
@@ -624,16 +714,11 @@ function DevCardBar({ game, me }: { game: GameState; me: Player }) {
   );
 }
 
-function DevChip({ label, enabled, onClick }: { label: string; enabled: boolean; onClick: () => void }) {
-  return (
-    <button
-      disabled={!enabled}
-      onClick={onClick}
-      className={`${BTN_BASE} px-2 py-1 ${enabled ? 'bg-card-alt hover:-translate-y-0.5 hover:shadow-soft' : 'text-ink-faint opacity-50'}`}
-    >
-      {label}
-    </button>
-  );
+function DevHandCard({ type, count, enabled, onClick }: { type: DevCardType; count: number; enabled: boolean; onClick?: () => void }) {
+  const label: Record<DevCardType, string> = {
+    knight: 'Knight', roadBuilding: 'Road Building', monopoly: 'Monopoly', yearOfPlenty: 'Year of Plenty', victoryPoint: 'Victory Point',
+  };
+  return <StackedCard src={DEV_CARD_ART[type]} alt={label[type]} count={count} direction="left" maxVisible={4} overlap={7} title={enabled ? `Play ${label[type]}` : label[type]} onClick={enabled ? onClick : undefined} className={enabled ? '' : 'opacity-60'} />;
 }
 
 function ResourcePicker({ count, title, onPick, onClose }: { count: number; title: string; onPick: (rs: Resource[]) => void; onClose: () => void }) {

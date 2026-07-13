@@ -22,11 +22,13 @@ import {
 
 export interface InteractionMode {
   vertices?: number[];
+  /** Upgrade targets receive a larger ring so they remain visible around settlements. */
+  cityVertices?: number[];
   edges?: number[];
   tiles?: number[];
-  onVertex?: (id: number) => void;
-  onEdge?: (id: number) => void;
-  onTile?: (id: number) => void;
+  onVertex?: (id: number) => boolean | void;
+  onEdge?: (id: number) => boolean | void;
+  onTile?: (id: number) => boolean | void;
 }
 
 interface Anim {
@@ -54,12 +56,15 @@ export class BoardRenderer {
   private anims: Anim[] = [];
   private robberSprite: Container | null = null;
   private bottomInset = 0;
+  private rightInset = 0;
+  private fittedScale = 1;
+  private interactionLocked = false;
 
   constructor(
     private readonly app: Application,
     private readonly tex: TextureMap = {},
   ) {
-    this.view.addChild(this.water, this.tiles, this.ports, this.pieces, this.overlay);
+    this.view.addChild(this.water, this.tiles, this.ports, this.overlay, this.pieces);
     app.stage.addChild(this.view);
     app.ticker.add((t) => this.tick(t.deltaMS));
   }
@@ -378,20 +383,30 @@ export class BoardRenderer {
 
   /** Highlight legal placement spots and wire click callbacks. */
   setInteraction(mode: InteractionMode | null): void {
+    this.interactionLocked = false;
     this.overlay.removeChildren();
     if (!mode || !this.board) return;
     const board = this.board;
 
-    for (const vId of mode.vertices ?? []) {
+    const vertexTargets = [
+      ...(mode.vertices ?? []).map((id) => ({ id, city: false })),
+      ...(mode.cityVertices ?? []).map((id) => ({ id, city: true })),
+    ];
+    for (const { id: vId, city } of vertexTargets) {
       const p = board.vertices[vId].point;
       const dot = new Graphics();
-      dot.circle(0, 0, 16).fill({ color: HIGHLIGHT, alpha: 0.35 }).stroke({ width: 3, color: HIGHLIGHT });
+      if (city) {
+        dot.circle(0, 0, 30).fill({ color: HIGHLIGHT, alpha: 0.16 }).stroke({ width: 5, color: HIGHLIGHT, alpha: 0.95 });
+        dot.circle(0, 0, 22).stroke({ width: 2, color: 0xffffff, alpha: 0.8 });
+      } else {
+        dot.circle(0, 0, 16).fill({ color: HIGHLIGHT, alpha: 0.35 }).stroke({ width: 3, color: HIGHLIGHT });
+      }
       dot.position.set(p.x, p.y);
       dot.eventMode = 'static';
       dot.cursor = 'pointer';
-      dot.hitArea = new Circle(0, 0, 20);
+      dot.hitArea = new Circle(0, 0, city ? 34 : 20);
       (dot as Container & { __pulse?: boolean }).__pulse = true;
-      dot.on('pointertap', () => mode.onVertex?.(vId));
+      dot.on('pointertap', () => this.invokeInteraction(mode.onVertex, vId));
       this.overlay.addChild(dot);
     }
 
@@ -399,10 +414,11 @@ export class BoardRenderer {
       const edge = board.edges[eId];
       const [a, b] = edge.vertexIds.map((v) => board.vertices[v].point);
       const g = new Graphics();
-      g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 16, color: HIGHLIGHT, alpha: 0.55, cap: 'round' });
+      g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 24, color: HIGHLIGHT, alpha: 0.32, cap: 'round' });
+      g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 14, color: HIGHLIGHT, alpha: 0.9, cap: 'round' });
       g.eventMode = 'static';
       g.cursor = 'pointer';
-      g.on('pointertap', () => mode.onEdge?.(eId));
+      g.on('pointertap', () => this.invokeInteraction(mode.onEdge, eId));
       this.overlay.addChild(g);
     }
 
@@ -411,11 +427,19 @@ export class BoardRenderer {
       const pts = tile.vertexIds.flatMap((v) => [board.vertices[v].point.x, board.vertices[v].point.y]);
       const g = new Graphics();
       g.poly(pts).fill({ color: HIGHLIGHT, alpha: 0.22 }).stroke({ width: 4, color: HIGHLIGHT, alpha: 0.8 });
+      g.circle(tile.center.x, tile.center.y, 22).fill({ color: HIGHLIGHT, alpha: 0.32 }).stroke({ width: 4, color: 0xffffff, alpha: 0.9 });
       g.eventMode = 'static';
       g.cursor = 'pointer';
-      g.on('pointertap', () => mode.onTile?.(tId));
+      g.on('pointertap', () => this.invokeInteraction(mode.onTile, tId));
       this.overlay.addChild(g);
     }
+  }
+
+  /** Ignore duplicate taps until React refreshes the legal placement targets. */
+  private invokeInteraction(handler: ((id: number) => boolean | void) | undefined, id: number): void {
+    if (!handler || this.interactionLocked) return;
+    this.interactionLocked = true;
+    if (handler(id) === false) this.interactionLocked = false;
   }
 
   /** Where a tile's center currently sits in viewport (client) pixels. */
@@ -436,16 +460,39 @@ export class BoardRenderer {
     if (!this.board) return;
     const maxR = Math.max(...this.board.vertices.map((v) => Math.hypot(v.point.x, v.point.y))) + 130;
     const { width, height } = this.app.screen;
+    const usableWidth = Math.max(1, width - this.rightInset);
     const usableHeight = Math.max(1, height - this.bottomInset);
-    const scale = Math.min(width, usableHeight) / (maxR * 2);
+    const scale = Math.min(usableWidth, usableHeight) / (maxR * 2);
+    this.fittedScale = scale;
     this.view.scale.set(scale);
-    this.view.position.set(width / 2, usableHeight / 2);
+    this.view.position.set(usableWidth / 2, usableHeight / 2);
   }
 
   /** Reserve screen space occupied by HTML controls below the board. */
   setBottomInset(pixels: number): void {
     this.bottomInset = Math.max(0, pixels);
     this.fit();
+  }
+
+  /** Reserve screen space occupied by the floating right sidebar while keeping the canvas full-width. */
+  setRightInset(pixels: number): void {
+    this.rightInset = Math.max(0, pixels);
+    this.fit();
+  }
+
+  /** Zoom around the center of the playable area without disturbing the board's pan offset. */
+  zoomBy(factor: number): void {
+    const current = this.view.scale.x;
+    const next = Math.min(this.fittedScale * 2.5, Math.max(this.fittedScale * 0.55, current * factor));
+    if (next === current) return;
+    const anchorX = (this.app.screen.width - this.rightInset) / 2;
+    const anchorY = (this.app.screen.height - this.bottomInset) / 2;
+    const ratio = next / current;
+    this.view.position.set(
+      anchorX + (this.view.position.x - anchorX) * ratio,
+      anchorY + (this.view.position.y - anchorY) * ratio,
+    );
+    this.view.scale.set(next);
   }
 
   /** Move the fitted board by a client-pixel drag delta. */

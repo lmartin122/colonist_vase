@@ -16,6 +16,7 @@ import type { GameState, Player } from '../engine/types';
 import { RESOURCES } from '../engine/types';
 import { PLAYER_CSS } from '../render/palette';
 import { useGame } from '../state/store';
+import { StackedCard } from './StackedCard';
 
 /**
  * Right game sidebar (colonist.io-style): event log, chat, an approximate bank
@@ -114,37 +115,31 @@ function BankSummary({ game }: { game: GameState }) {
       <div className="flex flex-1 items-end justify-around">
         {RESOURCES.map((r) => (
           <div key={r} data-bank={r}>
-            <CardStack
+            <StackedCard
               src={RESOURCE_CARD[r]}
               count={game.rules.hideBankCards ? 1 : game.bank[r]}
-              title={game.rules.hideBankCards ? `${r}: hidden` : `${r}: ~${game.bank[r]}`}
+              alt={r}
+              title={game.rules.hideBankCards ? `${r}: hidden` : `${r}: ${game.bank[r]}`}
+              direction="up"
+              cardWidth={24}
+              cardHeight={36}
+              overlap={4}
+              visibleCount={stackHeight(game.rules.hideBankCards ? 1 : game.bank[r])}
             />
           </div>
         ))}
-        <CardStack
+        <StackedCard
           src={CARD_DEV_BACK}
           count={game.rules.hideBankCards ? 1 : game.devDeck.length}
+          alt="Development card"
           title={game.rules.hideBankCards ? 'dev cards: hidden' : `dev cards: ${game.devDeck.length}`}
+          direction="up"
+          cardWidth={24}
+          cardHeight={36}
+          overlap={4}
+          visibleCount={stackHeight(game.rules.hideBankCards ? 1 : game.devDeck.length)}
         />
       </div>
-    </div>
-  );
-}
-
-function CardStack({ src, count, title }: { src: string; count: number; title: string }) {
-  const h = stackHeight(count);
-  return (
-    <div className="relative h-9 w-7" title={title}>
-      {h === 0 && <img src={src} className="absolute inset-x-0 bottom-0 mx-auto w-6 opacity-25 grayscale" alt="" />}
-      {Array.from({ length: h }).map((_, i) => (
-        <img
-          key={i}
-          src={src}
-          alt=""
-          className="absolute inset-x-0 mx-auto w-6 drop-shadow-sm"
-          style={{ bottom: `${i * 4}px`, zIndex: i }}
-        />
-      ))}
     </div>
   );
 }
@@ -177,7 +172,7 @@ function PlayerPanel({ game, player, isHuman }: { game: GameState; player: Playe
       <div className="flex min-w-0 flex-1 items-center justify-between gap-1.5">
         <span className="mr-auto truncate font-display text-sm font-bold text-ink">{player.name}</span>
         {shownDice && <RollDice dice={shownDice} />}
-        <CountCard src={overLimit ? CARD_HIDDEN_WARNING : CARD_HIDDEN} count={handSize} />
+        <CountCard src={overLimit ? CARD_HIDDEN_WARNING : CARD_HIDDEN} count={handSize} playerId={player.id} />
         <CountCard src={CARD_DEV_BACK} count={devCount} />
         <StatIcon
           src={hasArmy ? LARGEST_ARMY_HL : LARGEST_ARMY}
@@ -272,9 +267,9 @@ function Avatar({ color, isHuman, vp, active }: { color: string; isHuman: boolea
   );
 }
 
-function CountCard({ src, count }: { src: string; count: number }) {
+function CountCard({ src, count, playerId }: { src: string; count: number; playerId?: number }) {
   return (
-    <div className="relative h-10 w-[30px] shrink-0">
+    <div data-player-cards={playerId} className="relative h-10 w-[30px] shrink-0">
       <img src={src} alt="" className="h-full w-full object-contain drop-shadow-sm" />
       <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-ink px-1 text-[10px] font-extrabold text-card ring-1 ring-white/40">
         {count}

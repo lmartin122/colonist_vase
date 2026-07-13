@@ -7,14 +7,15 @@ import { rollDie, nextInt } from './rng';
 import { updateLongestRoad } from './longestRoad';
 import {
   addResources,
+  botAcceptsTrade,
   bankTradeRatio,
   canAfford,
   subtractResources,
   totalResources,
   victoryPoints,
 } from './helpers';
-import { connectedByRoad, roadConnects, settlementSpotOpen } from './placement';
-import type { GameState, Player, Resource, ResourceBank } from './types';
+import { connectedByRoad, legalRoadEdges, roadConnects, settlementSpotOpen } from './placement';
+import type { DevCardType, GameState, Player, Resource, ResourceBank, TradeOfferResponse } from './types';
 import { RESOURCES } from './types';
 
 /**
@@ -81,6 +82,18 @@ function apply(state: GameState, action: Action): GameState {
       return bankTrade(state, action.give, action.receive);
     case 'playerTrade':
       return playerTrade(state, action.partner, action.give, action.receive);
+    case 'createTradeOffer':
+      return createTradeOffer(state, action.give, action.receive, action.anyCount);
+    case 'completeTradeOffer':
+      return completeTradeOffer(state, action.offerId, action.partner);
+    case 'cancelTradeOffer':
+      return cancelTradeOffer(state, action.offerId);
+    case 'debugAddResources':
+      return debugAddResources(state, action.player, action.resources);
+    case 'debugGrantDevCard':
+      return debugGrantDevCard(state, action.player, action.card);
+    case 'debugTriggerRobber':
+      return debugTriggerRobber(state);
     case 'endTurn':
       return endTurn(state);
   }
@@ -398,12 +411,13 @@ function spend(state: GameState, player: number, cost: Partial<ResourceBank>): G
 }
 
 function buildRoad(state: GameState, edge: number): GameState {
-  requireMain(state);
   // Road Building grants free roads; otherwise pay wood + brick.
   if (state.pending.freeRoads > 0) {
+    if (state.phase !== 'roll' && state.phase !== 'main') fail('Cannot place a free road now');
     const placed = placeRoad(state, edge);
     return { ...placed, pending: { ...placed.pending, freeRoads: placed.pending.freeRoads - 1 } };
   }
+  requireMain(state);
   return placeRoad(spend(state, state.currentPlayer, COSTS.road), edge);
 }
 
@@ -590,6 +604,61 @@ function playerTrade(
   return log(next, `${playerName(next, player)} traded with ${playerName(next, partner)}`);
 }
 
+function createTradeOffer(
+  state: GameState,
+  give: Partial<Record<Resource, number>>,
+  receive: Partial<Record<Resource, number>>,
+  anyCount: number,
+): GameState {
+  if (!state.rules.allowPlayerTrades) fail('Player trading is disabled');
+  requireMain(state);
+  const proposer = state.currentPlayer;
+  if (!canAfford(state.players[proposer].resources, give)) fail('You lack the offered resources');
+  const offered = RESOURCES.reduce((sum, resource) => sum + (give[resource] ?? 0), 0);
+  const requested = RESOURCES.reduce((sum, resource) => sum + (receive[resource] ?? 0), 0);
+  if (offered <= 0 || requested + anyCount <= 0 || !Number.isInteger(anyCount) || anyCount < 0) fail('Trade offer must include cards on both sides');
+
+  const responses: Record<number, TradeOfferResponse> = {};
+  for (const player of state.players) {
+    if (player.id === proposer) continue;
+    const wildcardResource = anyCount > 0
+      ? RESOURCES.find((resource) => botAcceptsTrade(state, player.id, give, { ...receive, [resource]: (receive[resource] ?? 0) + anyCount })) ?? null
+      : null;
+    responses[player.id] = {
+      accepted: anyCount > 0 ? wildcardResource !== null : botAcceptsTrade(state, player.id, give, receive),
+      wildcardResource,
+    };
+  }
+  const offer = { id: state.nextTradeOfferId, proposer, give, receive, anyCount, responses };
+  return log({ ...state, tradeOffers: [...state.tradeOffers, offer], nextTradeOfferId: state.nextTradeOfferId + 1 }, `${playerName(state, proposer)} proposed a trade`);
+}
+
+function completeTradeOffer(state: GameState, offerId: number, partner: number): GameState {
+  requireMain(state);
+  const offer = state.tradeOffers.find((item) => item.id === offerId);
+  if (!offer) fail('Trade offer no longer exists');
+  if (offer.proposer !== state.currentPlayer) fail('Only the current proposer can choose a trade partner');
+  const response = offer.responses[partner];
+  if (!response?.accepted) fail('That player did not accept this offer');
+  const receive = { ...offer.receive };
+  if (offer.anyCount > 0 && response.wildcardResource) receive[response.wildcardResource] = (receive[response.wildcardResource] ?? 0) + offer.anyCount;
+  if (!canAfford(state.players[offer.proposer].resources, offer.give)) fail('You no longer have the offered resources');
+  if (!canAfford(state.players[partner].resources, receive)) fail('That player no longer has the requested resources');
+
+  let next = withPlayer(state, offer.proposer, (p) => ({ ...p, resources: addResources(subtractResources(p.resources, offer.give), receive) }));
+  next = withPlayer(next, partner, (p) => ({ ...p, resources: addResources(subtractResources(p.resources, receive), offer.give) }));
+  next = { ...next, tradeOffers: next.tradeOffers.filter((item) => item.id !== offerId) };
+  return log(next, `${playerName(next, offer.proposer)} traded with ${playerName(next, partner)}`);
+}
+
+function cancelTradeOffer(state: GameState, offerId: number): GameState {
+  requireMain(state);
+  const offer = state.tradeOffers.find((item) => item.id === offerId);
+  if (!offer) fail('Trade offer no longer exists');
+  if (offer.proposer !== state.currentPlayer) fail('Only the current proposer can cancel this offer');
+  return log({ ...state, tradeOffers: state.tradeOffers.filter((item) => item.id !== offerId) }, `${playerName(state, offer.proposer)} cancelled a trade offer`);
+}
+
 // ---------------------------------------------------------------------------
 // Turn flow, army, win
 // ---------------------------------------------------------------------------
@@ -612,8 +681,36 @@ function checkWin(state: GameState): GameState {
   return state;
 }
 
+/** Developer-only helpers, intentionally routed through the pure reducer. */
+function debugAddResources(state: GameState, player: number, resources: Partial<Record<Resource, number>>): GameState {
+  if (!state.players[player]) fail('Unknown player');
+  const added = RESOURCES.reduce((sum, resource) => sum + (resources[resource] ?? 0), 0);
+  if (!Number.isInteger(added) || added <= 0 || RESOURCES.some((resource) => (resources[resource] ?? 0) < 0)) {
+    fail('Debug resources must be positive whole cards');
+  }
+  const next = withPlayer(state, player, (p) => ({ ...p, resources: addResources(p.resources, resources) }));
+  return log(next, `Debug: gave ${added} resource card${added === 1 ? '' : 's'} to ${playerName(next, player)}`, player);
+}
+
+function debugGrantDevCard(state: GameState, player: number, card: DevCardType): GameState {
+  if (!state.players[player]) fail('Unknown player');
+  const next = withPlayer(state, player, (p) => ({
+    ...p,
+    devCards: [...p.devCards, { type: card, boughtOnTurn: state.turn - 1, played: false }],
+  }));
+  return log(next, `Debug: gave ${playerName(next, player)} a ${card} progress card`, player);
+}
+
+function debugTriggerRobber(state: GameState): GameState {
+  if (state.phase !== 'roll' && state.phase !== 'main') fail('Robber can only be triggered during a turn');
+  return log({ ...state, phase: 'moveRobber', pending: { ...state.pending, discards: {} } }, 'Debug: robber placement started');
+}
+
 function endTurn(state: GameState): GameState {
   if (state.phase !== 'main') fail('Cannot end turn now');
+  if (state.pending.freeRoads > 0 && legalRoadEdges(state, state.currentPlayer).length > 0) {
+    fail(`Place ${state.pending.freeRoads} remaining free road${state.pending.freeRoads === 1 ? '' : 's'} before ending your turn`);
+  }
   const currentIndex = state.turnOrder.indexOf(state.currentPlayer);
   const nextPlayer = state.turnOrder[(currentIndex + 1) % state.turnOrder.length];
   return {
@@ -623,6 +720,7 @@ function endTurn(state: GameState): GameState {
     dice: null,
     turn: state.turn + 1,
     pending: { discards: {}, freeRoads: 0, playedDevThisTurn: false, hasRolled: false },
+    tradeOffers: [],
     log: [...state.log, { turn: state.turn + 1, player: nextPlayer, message: `${playerName(state, nextPlayer)}'s turn` }],
   };
 }

@@ -3,7 +3,8 @@ import { createGame } from '../src/engine/game';
 import { applyOrThrow, reduce } from '../src/engine/reduce';
 import { longestRoadLength } from '../src/engine/longestRoad';
 import { bankTradeRatio, totalResources } from '../src/engine/helpers';
-import type { GameState, Resource } from '../src/engine/types';
+import type { DevCardType, GameState, Resource } from '../src/engine/types';
+import { legalRoadEdges, robberTargetTiles, stealableOpponents } from '../src/engine/placement';
 
 function game(seed = 1): GameState {
   return createGame({
@@ -65,6 +66,39 @@ describe('bank trading', () => {
   });
 });
 
+describe('trade offers', () => {
+  it('stores responses, completes a selected acceptance, and clears offers at turn end', () => {
+    let s = autoSetup(game(16));
+    s = { ...s, currentPlayer: 0, phase: 'main' };
+    s = setRes(s, 0, { ore: 2 });
+    s = setRes(s, 1, { sheep: 2 });
+    s = setRes(s, 2, { ore: 1 });
+
+    s = applyOrThrow(s, {
+      type: 'createTradeOffer',
+      give: { ore: 1 },
+      receive: { sheep: 1 },
+      anyCount: 0,
+    });
+    expect(s.tradeOffers).toHaveLength(1);
+    expect(s.tradeOffers[0].responses[1].accepted).toBe(true);
+
+    s = applyOrThrow(s, { type: 'completeTradeOffer', offerId: s.tradeOffers[0].id, partner: 1 });
+    expect(s.players[0].resources).toMatchObject({ ore: 1, sheep: 1 });
+    expect(s.tradeOffers).toHaveLength(0);
+
+    s = applyOrThrow(s, {
+      type: 'createTradeOffer',
+      give: { ore: 1 },
+      receive: { ore: 1 },
+      anyCount: 0,
+    });
+    expect(reduce(s, { type: 'endTurn' }).ok).toBe(true);
+    s = applyOrThrow(s, { type: 'endTurn' });
+    expect(s.tradeOffers).toHaveLength(0);
+  });
+});
+
 describe('game rules', () => {
   it('stores custom timer, victory, discard, and visibility rules in game state', () => {
     const s = createGame({
@@ -73,6 +107,17 @@ describe('game rules', () => {
       rules: { turnTimer: 15, victoryPoints: 14, discardLimit: 9, hideBankCards: true, friendlyRobber: true },
     });
     expect(s.rules).toMatchObject({ turnTimer: 15, victoryPoints: 14, discardLimit: 9, hideBankCards: true, friendlyRobber: true });
+  });
+
+  it('uses explicitly configured player colors', () => {
+    const s = createGame({
+      players: [
+        { name: 'A', isBot: false, color: 'green' },
+        { name: 'B', isBot: true, color: 'orange' },
+      ],
+      seed: 5,
+    });
+    expect(s.players.map((player) => player.color)).toEqual(['green', 'orange']);
   });
 
   it('rejects direct player trades when that rule is disabled', () => {
@@ -131,6 +176,62 @@ describe('robber', () => {
   });
 });
 
+describe('progress cards', () => {
+  it('requires Road Building roads before ending the turn', () => {
+    let s = autoSetup(game(12));
+    s = withDevCard(s, 0, 'roadBuilding');
+    s = { ...s, currentPlayer: 0, phase: 'main', turn: s.turn + 1 };
+
+    s = applyOrThrow(s, { type: 'playRoadBuilding' });
+    expect(s.pending.freeRoads).toBe(2);
+    expect(reduce(s, { type: 'endTurn' }).ok).toBe(false);
+
+    s = applyOrThrow(s, { type: 'buildRoad', edge: legalRoadEdges(s, 0)[0] });
+    s = applyOrThrow(s, { type: 'buildRoad', edge: legalRoadEdges(s, 0)[0] });
+    expect(s.pending.freeRoads).toBe(0);
+    expect(reduce(s, { type: 'endTurn' }).ok).toBe(true);
+  });
+
+  it('allows Road Building roads to be placed before rolling', () => {
+    let s = autoSetup(game(14));
+    s = withDevCard(s, 0, 'roadBuilding');
+    s = { ...s, currentPlayer: 0, phase: 'roll', turn: s.turn + 1 };
+
+    s = applyOrThrow(s, { type: 'playRoadBuilding' });
+    s = applyOrThrow(s, { type: 'buildRoad', edge: legalRoadEdges(s, 0)[0] });
+    expect(s.phase).toBe('roll');
+    expect(s.pending.freeRoads).toBe(1);
+  });
+
+  it('plays Knight by selecting a legal robber hex and victim', () => {
+    let s = autoSetup(game(13));
+    s = setRes(s, 1, { sheep: 1 });
+    s = withDevCard(s, 0, 'knight');
+    s = { ...s, currentPlayer: 0, phase: 'main', turn: s.turn + 1 };
+    const tile = robberTargetTiles(s).find((candidate) => stealableOpponents(s, candidate, 0).includes(1))!;
+
+    s = applyOrThrow(s, { type: 'playKnight', tile, stealFrom: 1 });
+    expect(s.phase).toBe('main');
+    expect(s.players[0].knightsPlayed).toBe(1);
+    expect(s.players[0].devCards.find((card) => card.type === 'knight')?.played).toBe(true);
+  });
+});
+
+describe('debug actions', () => {
+  it('adds cards, grants a playable progress card, and starts robber placement through the reducer', () => {
+    let s = autoSetup(game(15));
+    s = { ...s, currentPlayer: 0, phase: 'main', turn: s.turn + 1 };
+
+    const before = { ...s.players[0].resources };
+    s = applyOrThrow(s, { type: 'debugAddResources', player: 0, resources: { wood: 3, ore: 1 } });
+    expect(s.players[0].resources).toMatchObject({ wood: before.wood + 3, ore: before.ore + 1 });
+    s = applyOrThrow(s, { type: 'debugGrantDevCard', player: 0, card: 'yearOfPlenty' });
+    expect(s.players[0].devCards.at(-1)).toMatchObject({ type: 'yearOfPlenty', played: false });
+    s = applyOrThrow(s, { type: 'debugTriggerRobber' });
+    expect(s.phase).toBe('moveRobber');
+  });
+});
+
 describe('longest road', () => {
   it('measures the longest continuous trail', () => {
     // Build a straight chain of roads for player 0 by hand.
@@ -153,7 +254,7 @@ describe('longest road', () => {
   });
 });
 
-function withDevCard(s: GameState, player: number, type: 'monopoly'): GameState {
+function withDevCard(s: GameState, player: number, type: DevCardType): GameState {
   const players = s.players.map((p) =>
     p.id === player
       ? { ...p, devCards: [...p.devCards, { type, boughtOnTurn: s.turn, played: false }] }

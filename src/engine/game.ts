@@ -12,6 +12,7 @@ import { emptyBank } from './types';
 export interface PlayerConfig {
   name: string;
   isBot: boolean;
+  color?: PlayerColor;
 }
 
 export interface GameConfig {
@@ -44,7 +45,7 @@ export function createGame(config: GameConfig): GameState {
   const players: Player[] = config.players.map((p, i) => ({
     id: i,
     name: p.name,
-    color: PLAYER_COLORS[i % PLAYER_COLORS.length] as PlayerColor,
+    color: p.color ?? (PLAYER_COLORS[i % PLAYER_COLORS.length] as PlayerColor),
     isBot: p.isBot,
     resources: emptyBank(),
     devCards: [],
@@ -79,6 +80,8 @@ export function createGame(config: GameConfig): GameState {
       playedDevThisTurn: false,
       hasRolled: false,
     },
+    tradeOffers: [],
+    nextTradeOfferId: 1,
     winner: null,
     log: [{ turn: 0, player: null, message: 'Game created. Roll to determine who places first.' }],
   };

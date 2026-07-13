@@ -6,19 +6,11 @@ import {
   robberTargetTiles,
   stealableOpponents,
 } from '../engine/placement';
-import { totalResources } from '../engine/helpers';
 import type { GameState } from '../engine/types';
 import type { InteractionMode } from '../render/BoardRenderer';
 import type { BuildMode } from './store';
 
-/** Auto-select the richest legal victim when moving the robber. */
-function pickVictim(game: GameState, tile: number, actor: number): number | null {
-  const victims = stealableOpponents(game, tile, actor);
-  if (victims.length === 0) return null;
-  return victims.reduce((best, p) =>
-    totalResources(game.players[p].resources) > totalResources(game.players[best].resources) ? p : best,
-  );
-}
+type RobberAction = 'moveRobber' | 'playKnight';
 
 /**
  * Translate the current game state + the human's chosen build mode into board
@@ -30,6 +22,7 @@ export function deriveInteraction(
   build: BuildMode,
   humanId: number,
   dispatch: (a: Action) => boolean,
+  chooseRobberVictim?: (tile: number, action: RobberAction, victims: number[]) => void,
 ): InteractionMode | null {
   if (!game) return null;
   const isHumanTurn = game.currentPlayer === humanId;
@@ -52,19 +45,27 @@ export function deriveInteraction(
   if (game.phase === 'moveRobber' && isHumanTurn) {
     return {
       tiles: robberTargetTiles(game),
-      onTile: (t) => dispatch({ type: 'moveRobber', tile: t, stealFrom: pickVictim(game, t, humanId) }),
+      onTile: (t) => resolveRobberTarget(game, t, 'moveRobber', humanId, dispatch, chooseRobberVictim),
     };
   }
 
-  if (game.phase !== 'main' || !isHumanTurn) return null;
-
   // Road Building card: force free-road placement until the grant is used up.
-  if (game.pending.freeRoads > 0) {
+  if (game.pending.freeRoads > 0 && isHumanTurn) {
     return {
       edges: legalRoadEdges(game, humanId),
       onEdge: (e) => dispatch({ type: 'buildRoad', edge: e }),
     };
   }
+
+  // Knight may be played before rolling, as well as during the main phase.
+  if (build?.kind === 'knight' && isHumanTurn && (game.phase === 'roll' || game.phase === 'main')) {
+    return {
+      tiles: robberTargetTiles(game),
+      onTile: (t) => resolveRobberTarget(game, t, 'playKnight', humanId, dispatch, chooseRobberVictim),
+    };
+  }
+
+  if (game.phase !== 'main' || !isHumanTurn) return null;
 
   switch (build?.kind) {
     case 'road':
@@ -79,15 +80,29 @@ export function deriveInteraction(
       };
     case 'city':
       return {
-        vertices: legalCityVertices(game, humanId),
+        cityVertices: legalCityVertices(game, humanId),
         onVertex: (v) => dispatch({ type: 'buildCity', vertex: v }),
-      };
-    case 'knight':
-      return {
-        tiles: robberTargetTiles(game),
-        onTile: (t) => dispatch({ type: 'playKnight', tile: t, stealFrom: pickVictim(game, t, humanId) }),
       };
     default:
       return null;
   }
+}
+
+function resolveRobberTarget(
+  game: GameState,
+  tile: number,
+  action: RobberAction,
+  humanId: number,
+  dispatch: (a: Action) => boolean,
+  chooseRobberVictim?: (tile: number, action: RobberAction, victims: number[]) => void,
+): boolean {
+  const victims = stealableOpponents(game, tile, humanId);
+  if (victims.length > 1 && chooseRobberVictim) {
+    chooseRobberVictim(tile, action, victims);
+    return true;
+  }
+  const stealFrom = victims[0] ?? null;
+  return action === 'moveRobber'
+    ? dispatch({ type: 'moveRobber', tile, stealFrom })
+    : dispatch({ type: 'playKnight', tile, stealFrom });
 }

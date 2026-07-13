@@ -44,51 +44,6 @@ export function nextBotAction(state: GameState, actor: number): Action | null {
   }
 }
 
-// --- Trade evaluation (player-to-player) -----------------------------------
-
-function bagValue(bag: Partial<Record<Resource, number>>): number {
-  return RESOURCES.reduce((sum, r) => sum + (bag[r] ?? 0) * resourceValue(r), 0);
-}
-
-/**
- * Would a bot accept a proposed trade? `humanGives` flows to the bot, `humanWants`
- * flows from the bot. Bots accept only trades that improve their resource value
- * and that they can actually afford.
- */
-export function botAcceptsTrade(
-  state: GameState,
-  botId: number,
-  humanGives: Partial<Record<Resource, number>>,
-  humanWants: Partial<Record<Resource, number>>,
-): boolean {
-  const bot = state.players[botId];
-  if (!canAfford(bot.resources, humanWants)) return false;
-  const gain = bagValue(humanGives);
-  const loss = bagValue(humanWants);
-  return gain > 0 && loss > 0 && gain >= loss * 1.1;
-}
-
-/** Pick the bot that gains the most from the offer, or null if all decline. */
-export function bestTradePartner(
-  state: GameState,
-  humanId: number,
-  humanGives: Partial<Record<Resource, number>>,
-  humanWants: Partial<Record<Resource, number>>,
-): number | null {
-  let best: number | null = null;
-  let bestSurplus = 0;
-  for (const p of state.players) {
-    if (p.id === humanId) continue;
-    if (!botAcceptsTrade(state, p.id, humanGives, humanWants)) continue;
-    const surplus = bagValue(humanGives) - bagValue(humanWants);
-    if (surplus > bestSurplus) {
-      bestSurplus = surplus;
-      best = p.id;
-    }
-  }
-  return best;
-}
-
 // --- Board evaluation ------------------------------------------------------
 
 /** Expected production of a vertex: sum of probability pips on adjacent tiles. */
