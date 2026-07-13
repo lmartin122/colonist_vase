@@ -10,8 +10,8 @@ import {
   RESOURCE_CARD,
   diceAsset,
 } from '../assets';
-import { STARTING_STOCK } from '../engine/constants';
 import { publicVictoryPoints, totalResources, victoryPoints } from '../engine/helpers';
+import { longestRoadLength } from '../engine/longestRoad';
 import type { GameState, Player } from '../engine/types';
 import { RESOURCES } from '../engine/types';
 import { PLAYER_CSS } from '../render/palette';
@@ -153,7 +153,7 @@ function PlayerPanel({ game, player, isHuman }: { game: GameState; player: Playe
   const handSize = totalResources(player.resources);
   const overLimit = handSize > game.rules.discardLimit;
   const devCount = player.devCards.filter((c) => !c.played).length;
-  const roadsBuilt = STARTING_STOCK.roads - player.stock.roads;
+  const roadLength = longestRoadLength(game, player.id);
   const hasArmy = game.largestArmy.player === player.id;
   const hasRoad = game.longestRoad.player === player.id;
   const shownDice = game.phase === 'startingRoll'
@@ -171,6 +171,7 @@ function PlayerPanel({ game, player, isHuman }: { game: GameState; player: Playe
       <Avatar color={color} isHuman={isHuman} vp={vp} active={active} />
       <div className="flex min-w-0 flex-1 items-center justify-between gap-1.5">
         <span className="mr-auto truncate font-display text-sm font-bold text-ink">{player.name}</span>
+        {player.botDifficulty && <span title={`${player.botDifficulty} bot`} className="rounded-md bg-ink/10 px-1 py-0.5 text-[8px] font-extrabold uppercase text-ink-soft">{player.botDifficulty[0]}</span>}
         {shownDice && <RollDice dice={shownDice} />}
         <CountCard src={overLimit ? CARD_HIDDEN_WARNING : CARD_HIDDEN} count={handSize} playerId={player.id} />
         <CountCard src={CARD_DEV_BACK} count={devCount} />
@@ -182,8 +183,8 @@ function PlayerPanel({ game, player, isHuman }: { game: GameState; player: Playe
         />
         <StatIcon
           src={hasRoad ? LARGEST_ROAD_HL : LARGEST_ROAD}
-          count={roadsBuilt}
-          title={hasRoad ? 'Longest Road' : 'Roads built'}
+          count={roadLength}
+          title={hasRoad ? 'Longest Road' : 'Longest continuous road'}
           lit={hasRoad}
         />
       </div>

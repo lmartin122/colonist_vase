@@ -29,7 +29,8 @@ export type Action =
   // Trading
   | { type: 'bankTrade'; give: Resource; receive: Resource }
   | { type: 'playerTrade'; partner: number; give: Partial<Record<Resource, number>>; receive: Partial<Record<Resource, number>> }
-  | { type: 'createTradeOffer'; give: Partial<Record<Resource, number>>; receive: Partial<Record<Resource, number>>; anyCount: number }
+  | { type: 'createTradeOffer'; give: Partial<Record<Resource, number>>; receive: Partial<Record<Resource, number>>; anyCount: number; target?: number }
+  | { type: 'respondTradeOffer'; offerId: number; responder: number; accepted: boolean; wildcardResource?: Resource }
   | { type: 'completeTradeOffer'; offerId: number; partner: number }
   | { type: 'cancelTradeOffer'; offerId: number }
   // Debug-only developer tools. Kept in the reducer so debug state changes remain deterministic.

@@ -8,6 +8,7 @@ export const RESOURCES: Resource[] = ['wood', 'brick', 'sheep', 'wheat', 'ore'];
 export type TileType = Resource | 'desert';
 
 export type DevCardType = 'knight' | 'victoryPoint' | 'roadBuilding' | 'monopoly' | 'yearOfPlenty';
+export type BotDifficulty = 'easy' | 'medium' | 'hard';
 
 /** A bag of resources, keyed by resource. Missing keys read as 0 via helpers. */
 export type ResourceBank = Record<Resource, number>;
@@ -76,12 +77,33 @@ export interface Player {
   name: string;
   color: PlayerColor;
   isBot: boolean;
+  botDifficulty: BotDifficulty | null;
   resources: ResourceBank;
   /** Dev cards in hand, plus the turn they were bought (can't play same turn). */
   devCards: OwnedDevCard[];
   knightsPlayed: number;
   /** Pieces still available to place. */
   stock: { settlements: number; cities: number; roads: number };
+  /** Lifetime match counters used by the post-game statistics screen. */
+  stats: PlayerStats;
+}
+
+export interface PlayerStats {
+  resourcesCollected: ResourceBank;
+  devCardsCollected: Record<DevCardType, number>;
+  turnsTaken: number;
+  roadsPlaced: number;
+  settlementsPlaced: number;
+  citiesBuilt: number;
+  bankTrades: number;
+  playerTrades: number;
+  tradeOffers: number;
+  robberMoves: number;
+  successfulSteals: number;
+  cardsStolen: number;
+  cardsDiscarded: number;
+  devCardsBought: number;
+  devCardsPlayed: number;
 }
 
 export interface OwnedDevCard {
@@ -116,6 +138,8 @@ export interface GameState {
   turn: number;
   rng: RngState;
   rules: GameRules;
+  /** Normal gameplay dice totals. Opening-order rolls are intentionally excluded. */
+  diceStats: Record<number, number>;
 
   /** Buildings keyed by vertex id; roads keyed by edge id (value = owner index). */
   buildings: Record<number, Building>;
@@ -143,6 +167,8 @@ export interface GameState {
     playedDevThisTurn: boolean;
     /** True once the current player has rolled this turn. */
     hasRolled: boolean;
+    /** Prevents a bot from repeatedly proposing the same trade in one turn. */
+    botTradeOfferedThisTurn: boolean;
   };
 
   /** Player trade offers created during the active turn. */
@@ -154,7 +180,7 @@ export interface GameState {
 }
 
 export interface TradeOfferResponse {
-  accepted: boolean;
+  status: 'pending' | 'accepted' | 'declined';
   /** Resource chosen by the accepting player for each wildcard request. */
   wildcardResource: Resource | null;
 }
@@ -165,6 +191,8 @@ export interface TradeOffer {
   give: Partial<Record<Resource, number>>;
   receive: Partial<Record<Resource, number>>;
   anyCount: number;
+  /** A bot-originated offer targets one human; human offers target all bots. */
+  target: number | null;
   responses: Record<number, TradeOfferResponse>;
 }
 

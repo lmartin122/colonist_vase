@@ -108,7 +108,11 @@ export function botAcceptsTrade(
   if (!canAfford(bot.resources, requested)) return false;
   const gain = tradeValue(offered);
   const loss = tradeValue(requested);
-  return gain > 0 && loss > 0 && gain >= loss * 1.1;
+  const threshold = bot.botDifficulty === 'easy' ? 0.85 : bot.botDifficulty === 'hard' ? 1.15 : 1.05;
+  const leaderPenalty = bot.botDifficulty === 'hard' && state.currentPlayer !== botId
+    ? Math.max(0, publicVictoryPoints(state, state.currentPlayer) - publicVictoryPoints(state, botId)) * 0.08
+    : 0;
+  return gain > 0 && loss > 0 && gain >= loss * (threshold + leaderPenalty);
 }
 
 // --- Misc ------------------------------------------------------------------

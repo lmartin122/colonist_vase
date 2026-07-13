@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { cityAsset, roadAsset, settlementAsset } from '../assets';
 import { PLAYER_COLORS } from '../engine/constants';
 import { DEFAULT_RULES } from '../engine/game';
-import type { GameRules, PlayerColor } from '../engine/types';
+import type { BotDifficulty, GameRules, PlayerColor } from '../engine/types';
 import { useGame } from '../state/store';
 
 /** Landing screen: choose players, board, and rules, then start a game. */
@@ -12,6 +12,7 @@ export function StartScreen() {
   const enableDebug = useGame((s) => s.enableDebug);
   const debugEnabled = useGame((s) => s.debugEnabled);
   const [botSlots, setBotSlots] = useState([false, false, false]);
+  const [botDifficulties, setBotDifficulties] = useState<BotDifficulty[]>(['medium', 'medium', 'medium']);
   const [, setProfileClicks] = useState(0);
   const [playerColors, setPlayerColors] = useState<PlayerColor[]>([...PLAYER_COLORS]);
   const [layout, setLayout] = useState<'random' | 'classic'>('random');
@@ -22,7 +23,7 @@ export function StartScreen() {
     const players = [
       { name: 'You', isBot: false, color: playerColors[0] },
       ...BOT_NAMES.flatMap((name, index) => botSlots[index]
-        ? [{ name, isBot: true, color: playerColors[index + 1] }]
+        ? [{ name, isBot: true, color: playerColors[index + 1], botDifficulty: botDifficulties[index] }]
         : []),
     ];
     newGame({ players, layout, rules });
@@ -65,9 +66,9 @@ export function StartScreen() {
 
         <div
           className="grid gap-4 sm:gap-6"
-          style={{ gridTemplateColumns: 'clamp(240px, 30vw, 280px) minmax(0, 1fr)' }}
+          style={{ gridTemplateColumns: 'clamp(320px, 34vw, 360px) minmax(0, 1fr)' }}
         >
-          <PlayerSlots slots={botSlots} onChange={setBotSlots} colors={playerColors} onColorsChange={setPlayerColors} />
+          <PlayerSlots slots={botSlots} onChange={setBotSlots} colors={playerColors} onColorsChange={setPlayerColors} difficulties={botDifficulties} onDifficultiesChange={setBotDifficulties} />
 
           <div className="rounded-2xl bg-card-alt/30 p-4 ring-1 ring-black/5 dark:ring-white/10">
             <div className="grid gap-5 sm:grid-cols-2">
@@ -114,7 +115,7 @@ export function StartScreen() {
   );
 }
 
-function PlayerSlots({ slots, onChange, colors, onColorsChange }: { slots: boolean[]; onChange: (slots: boolean[]) => void; colors: PlayerColor[]; onColorsChange: (colors: PlayerColor[]) => void }) {
+function PlayerSlots({ slots, onChange, colors, onColorsChange, difficulties, onDifficultiesChange }: { slots: boolean[]; onChange: (slots: boolean[]) => void; colors: PlayerColor[]; onColorsChange: (colors: PlayerColor[]) => void; difficulties: BotDifficulty[]; onDifficultiesChange: (values: BotDifficulty[]) => void }) {
   const [openColor, setOpenColor] = useState<number | null>(null);
   const toggle = (index: number) => onChange(slots.map((filled, i) => i === index ? !filled : filled));
   const chooseColor = (playerSlot: number, color: PlayerColor) => {
@@ -140,6 +141,9 @@ function PlayerSlots({ slots, onChange, colors, onColorsChange }: { slots: boole
           <div key={BOT_NAMES[index]} className="relative flex min-h-[52px] flex-1 items-center gap-2 rounded-xl bg-card px-2 py-2 text-ink shadow-sm ring-1 ring-black/5 dark:ring-white/10">
             <span className="text-xl">🤖</span>
             <span className="truncate font-display text-sm font-extrabold">{BOT_NAMES[index]}</span>
+            <select value={difficulties[index]} onChange={(event) => onDifficultiesChange(difficulties.map((value, i) => i === index ? event.target.value as BotDifficulty : value))} aria-label={`${BOT_NAMES[index]} difficulty`} className="w-[78px] rounded-lg bg-card-alt px-1.5 py-1 text-[11px] font-extrabold capitalize text-ink outline-none ring-1 ring-ink/10">
+              <option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option>
+            </select>
             <div className="ml-auto">{picker(index + 1)}</div>
             <button type="button" onClick={() => toggle(index)} title={`Remove ${BOT_NAMES[index]}`} className="rounded-md px-1.5 py-1 text-xs text-ink-faint transition hover:bg-p-red hover:text-white">×</button>
           </div>

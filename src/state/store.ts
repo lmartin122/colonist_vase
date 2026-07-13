@@ -26,6 +26,8 @@ export interface Store {
   theme: Theme;
   debugEnabled: boolean;
   debugInfiniteTimer: { player: number; turn: number } | null;
+  matchStartedAt: number | null;
+  matchEndedAt: number | null;
 
   newGame: (config: GameConfig) => void;
   abandonGame: () => void;
@@ -37,6 +39,7 @@ export interface Store {
   toggleDebugInfiniteTimer: () => void;
   fastForwardTurn: () => void;
   simulatePhase: () => void;
+  simulateToGameEnd: () => void;
 }
 
 const THEME_KEY = 'cv-theme';
@@ -75,6 +78,7 @@ const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
  */
 function automatedActor(game: GameState, humanId: number): number | null {
   if (game.phase === 'gameOver') return null;
+  if (game.tradeOffers.some((offer) => offer.target === humanId && offer.responses[humanId]?.status === 'pending')) return null;
   if (game.phase === 'discard') {
     const botOwing = Object.keys(game.pending.discards)
       .map(Number)
@@ -89,7 +93,19 @@ function simulationActor(game: GameState): number {
   return game.currentPlayer;
 }
 
+function simulationAction(game: GameState, humanId: number): Action | null {
+  const awaitingHuman = game.tradeOffers.find((offer) => offer.responses[humanId]?.status === 'pending');
+  if (awaitingHuman) {
+    return { type: 'respondTradeOffer', offerId: awaitingHuman.id, responder: humanId, accepted: false };
+  }
+  return nextBotAction(game, simulationActor(game));
+}
+
 export const useGame = create<Store>((set, get) => {
+  const timingFor = (game: GameState) => ({
+    matchEndedAt: game.phase === 'gameOver' ? get().matchEndedAt ?? Date.now() : null,
+  });
+
   async function runBots() {
     if (botRunning) return;
     botRunning = true;
@@ -110,11 +126,11 @@ export const useGame = create<Store>((set, get) => {
           // Safety net: a bot should never emit an illegal move; end its turn.
           console.warn('Bot produced illegal action:', action, result.error);
           const fallback = reduce(current, { type: 'endTurn' });
-          if (fallback.ok) set({ game: fallback.state });
+          if (fallback.ok) set({ game: fallback.state, ...timingFor(fallback.state) });
           else break;
           continue;
         }
-        set({ game: result.state });
+        set({ game: result.state, ...timingFor(result.state) });
         emitFlights(deriveFlights(current, result.state, action, humanId));
       }
     } finally {
@@ -123,19 +139,23 @@ export const useGame = create<Store>((set, get) => {
     }
   }
 
-  function simulate(continueWhile: (game: GameState) => boolean): void {
+  function simulate(continueWhile: (game: GameState) => boolean, maxSteps = 160, animate = true): void {
     let current = get().game;
     if (!current) return;
     const humanId = get().humanId;
-    for (let steps = 0; steps < 160 && continueWhile(current); steps++) {
-      const action = nextBotAction(current, simulationActor(current));
+    for (let steps = 0; steps < maxSteps && continueWhile(current); steps++) {
+      const action = simulationAction(current, humanId);
       if (!action) break;
       const result = reduce(current, action);
-      if (!result.ok) break;
-      emitFlights(deriveFlights(current, result.state, action, humanId));
+      if (!result.ok) {
+        set({ error: `Simulation stopped: ${result.error}` });
+        break;
+      }
+      if (animate) emitFlights(deriveFlights(current, result.state, action, humanId));
       current = result.state;
-      set({ game: current, build: null, error: null });
+      if (animate) set({ game: current, build: null, error: null, ...timingFor(current) });
     }
+    if (!animate) set({ game: current, build: null, error: null, ...timingFor(current) });
     void runBots();
   }
 
@@ -148,14 +168,16 @@ export const useGame = create<Store>((set, get) => {
     theme: initialTheme(),
     debugEnabled: false,
     debugInfiniteTimer: null,
+    matchStartedAt: null,
+    matchEndedAt: null,
 
     newGame(config) {
-      set({ game: createGame(config), build: null, error: null, humanId: 0, debugInfiniteTimer: null });
+      set({ game: createGame(config), build: null, error: null, humanId: 0, debugInfiniteTimer: null, matchStartedAt: Date.now(), matchEndedAt: null });
       void runBots();
     },
 
     abandonGame() {
-      set({ game: null, build: null, thinking: false, error: null, debugInfiniteTimer: null });
+      set({ game: null, build: null, thinking: false, error: null, debugInfiniteTimer: null, matchStartedAt: null, matchEndedAt: null });
     },
 
     dispatch(action) {
@@ -166,7 +188,7 @@ export const useGame = create<Store>((set, get) => {
         set({ error: result.error });
         return false;
       }
-      set({ game: result.state, error: null, build: null });
+      set({ game: result.state, error: null, build: null, ...timingFor(result.state) });
       emitFlights(deriveFlights(game, result.state, action, get().humanId));
       void runBots();
       return true;
@@ -214,6 +236,10 @@ export const useGame = create<Store>((set, get) => {
       if (!game) return;
       const phase = game.phase;
       simulate((current) => current.phase === phase);
+    },
+
+    simulateToGameEnd() {
+      simulate((current) => current.phase !== 'gameOver', 20_000, false);
     },
   };
 });

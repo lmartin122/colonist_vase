@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CARD_DEV_BACK, DEV_CARD_ART, RESOURCE_CARD, TRADE_ICON, cityAsset, diceAsset, roadAsset, settlementAsset } from '../assets';
 import { nextBotAction } from '../ai/bot';
-import { COSTS } from '../engine/constants';
+import { COSTS, VP_LARGEST_ARMY, VP_LONGEST_ROAD } from '../engine/constants';
 import { canAfford, publicVictoryPoints, totalResources, victoryPoints } from '../engine/helpers';
+import { longestRoadLength } from '../engine/longestRoad';
 import type { DevCardType, GameState, Player, Resource } from '../engine/types';
 import { emptyBank, RESOURCES } from '../engine/types';
 import { PLAYER_CSS } from '../render/palette';
@@ -87,11 +88,35 @@ function TopBar({ game }: { game: GameState }) {
         <span className="font-display text-sm font-extrabold sm:text-base">{active.name}</span>
         <span className="text-ink-faint">·</span>
         <span className="text-xs text-ink-soft sm:text-sm">{PHASE_LABEL[game.phase]}</span>
+        <span className="text-ink-faint">·</span>
+        <span className="text-xs font-bold tabular-nums text-ink-soft">{game.turn > 0 ? `Turn ${game.turn}` : 'Setup'}</span>
+        <MatchElapsed />
         <TurnCountdown game={game} />
         {thinking && <span className="ml-0.5 animate-pulse text-[11px] text-ink-faint">thinking…</span>}
       </div>
     </div>
   );
+}
+
+function formatDuration(milliseconds: number): string {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = seconds % 60;
+  return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}` : `${minutes}:${String(remainder).padStart(2, '0')}`;
+}
+
+function MatchElapsed() {
+  const startedAt = useGame((state) => state.matchStartedAt);
+  const endedAt = useGame((state) => state.matchEndedAt);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!startedAt || endedAt) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [startedAt, endedAt]);
+  if (!startedAt) return null;
+  return <span title="Match time" className="rounded-lg bg-ink/10 px-1.5 py-0.5 font-mono text-[11px] font-bold tabular-nums text-ink-soft">{formatDuration((endedAt ?? now) - startedAt)}</span>;
 }
 
 function AbandonButton() {
@@ -235,6 +260,7 @@ function PlayerCard({ game, player, isHuman, active }: { game: GameState; player
       <span className="absolute left-0 top-0 h-full w-1.5" style={{ background: color }} />
       <div className="flex items-center gap-2 pl-1">
         <span className="truncate font-display text-sm font-extrabold">{player.name}</span>
+        {player.botDifficulty && <span title={`${player.botDifficulty} bot`} className="rounded-full bg-ink/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-ink-soft">{player.botDifficulty[0]}</span>}
         {active && <span className="rounded-full bg-ink/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-ink-soft">turn</span>}
         <span className="ml-auto flex items-baseline gap-0.5">
           <span className="font-display text-2xl font-extrabold leading-none" style={{ color }}>{vp}</span>
@@ -286,6 +312,7 @@ function HumanDock({ game }: { game: GameState }) {
   const debugInfiniteTimer = useGame((s) => s.debugInfiniteTimer);
   const [tradeOpen, setTradeOpen] = useState(false);
   const [tradeGive, setTradeGive] = useState<Bag>(zeroBag);
+  const [devPicker, setDevPicker] = useState<null | 'monopoly' | 'yop'>(null);
   const me = game.players[humanId];
   const myTurn = game.currentPlayer === humanId;
   const inMain = myTurn && game.phase === 'main';
@@ -302,6 +329,10 @@ function HumanDock({ game }: { game: GameState }) {
       setTradeGive(zeroBag());
     }
   }, [inMain]);
+
+  useEffect(() => {
+    if (!myTurn || (game.phase !== 'roll' && game.phase !== 'main')) setDevPicker(null);
+  }, [game.phase, myTurn]);
 
   const addTradeCard = (resource: Resource) => {
     if (!inMain) return;
@@ -375,13 +406,35 @@ function HumanDock({ game }: { game: GameState }) {
           onConfirm={() => dispatch({ type: 'discard', player: humanId, resources: sel })}
         />
       )}
+      {devPicker === 'monopoly' && (
+        <ResourcePicker
+          count={1}
+          title="Choose a resource to monopolise"
+          onPick={(resources) => {
+            dispatch({ type: 'playMonopoly', resource: resources[0] });
+            setDevPicker(null);
+          }}
+          onClose={() => setDevPicker(null)}
+        />
+      )}
+      {devPicker === 'yop' && (
+        <ResourcePicker
+          count={2}
+          title="Choose any two resources"
+          onPick={(resources) => {
+            dispatch({ type: 'playYearOfPlenty', resources });
+            setDevPicker(null);
+          }}
+          onClose={() => setDevPicker(null)}
+        />
+      )}
       <div className="flex w-full items-stretch gap-2">
         {/* Resource hand — fanned cards, grouped by resource (click to discard) */}
         <div
           data-hand-panel
           className={`flex min-h-[82px] basis-1/3 items-center gap-2 overflow-x-auto px-3 pb-2 pt-4 ${CARD} ${discarding ? 'ring-2 ring-amber-400' : ''}`}
         >
-          <ResourceHand game={game} me={me} discard={discarding ? { sel, onToggle: toggleDiscard } : undefined} tradeSelected={tradeOpen ? tradeGive : undefined} onCardClick={inMain ? addTradeCard : undefined} />
+          <ResourceHand game={game} me={me} discard={discarding ? { sel, onToggle: toggleDiscard } : undefined} tradeSelected={tradeOpen ? tradeGive : undefined} onCardClick={inMain ? addTradeCard : undefined} onDevPick={setDevPicker} />
         </div>
 
         {/* Action menu */}
@@ -568,7 +621,7 @@ function DiscardBanner({ selected, required, remaining, infinite, onConfirm }: {
 type DiscardCtl = { sel: Bag; onToggle: (r: Resource, delta: number) => void };
 
 /** The human's hand: one fanned pile per held resource, using the card art. */
-function ResourceHand({ game, me, discard, tradeSelected, onCardClick }: { game: GameState; me: Player; discard?: DiscardCtl; tradeSelected?: Bag; onCardClick?: (resource: Resource) => void }) {
+function ResourceHand({ game, me, discard, tradeSelected, onCardClick, onDevPick }: { game: GameState; me: Player; discard?: DiscardCtl; tradeSelected?: Bag; onCardClick?: (resource: Resource) => void; onDevPick: (picker: 'monopoly' | 'yop') => void }) {
   const present = RESOURCES.filter((r) => me.resources[r] - (tradeSelected?.[r] ?? 0) > 0);
   const hasDevCards = me.devCards.some((card) => !card.played);
   if (present.length === 0 && !hasDevCards) {
@@ -580,7 +633,7 @@ function ResourceHand({ game, me, discard, tradeSelected, onCardClick }: { game:
         discard ? <FannedStack key={r} res={r} src={RESOURCE_CARD[r]} count={me.resources[r] - (tradeSelected?.[r] ?? 0)} title={r} selected={discard.sel[r]} onToggle={(delta) => discard.onToggle(r, delta)} />
           : <StackedCard key={r} handStackId={r} src={RESOURCE_CARD[r]} alt={r} count={me.resources[r] - (tradeSelected?.[r] ?? 0)} direction="left" maxVisible={6} overlap={7} onClick={onCardClick ? () => onCardClick(r) : undefined} />
       ))}
-      {!discard && <DevelopmentCards game={game} me={me} />}
+      {!discard && <DevelopmentCards game={game} me={me} onPick={onDevPick} />}
     </>
   );
 }
@@ -674,11 +727,10 @@ function Hint({ children }: { children: React.ReactNode }) {
 }
 
 /** Played from the same hand as resource cards; victory cards remain informational. */
-function DevelopmentCards({ game, me }: { game: GameState; me: Player }) {
+function DevelopmentCards({ game, me, onPick }: { game: GameState; me: Player; onPick: (picker: 'monopoly' | 'yop') => void }) {
   const dispatch = useGame((s) => s.dispatch);
   const setBuild = useGame((s) => s.setBuild);
   const humanId = useGame((s) => s.humanId);
-  const [picker, setPicker] = useState<null | 'monopoly' | 'yop'>(null);
   const canPlay = game.currentPlayer === humanId && (game.phase === 'roll' || game.phase === 'main') && !game.pending.playedDevThisTurn;
 
   const counts: Record<DevCardType, { total: number; playable: number }> = {
@@ -700,16 +752,9 @@ function DevelopmentCards({ game, me }: { game: GameState; me: Player }) {
     <div className="relative flex shrink-0 items-center gap-2 border-l border-ink/10 pl-2 dark:border-white/10">
       {counts.knight.total > 0 && <DevHandCard type="knight" count={counts.knight.total} enabled={play('knight')} onClick={() => setBuild({ kind: 'knight' })} />}
       {counts.roadBuilding.total > 0 && <DevHandCard type="roadBuilding" count={counts.roadBuilding.total} enabled={play('roadBuilding')} onClick={() => dispatch({ type: 'playRoadBuilding' })} />}
-      {counts.monopoly.total > 0 && <DevHandCard type="monopoly" count={counts.monopoly.total} enabled={play('monopoly')} onClick={() => setPicker('monopoly')} />}
-      {counts.yearOfPlenty.total > 0 && <DevHandCard type="yearOfPlenty" count={counts.yearOfPlenty.total} enabled={play('yearOfPlenty')} onClick={() => setPicker('yop')} />}
+      {counts.monopoly.total > 0 && <DevHandCard type="monopoly" count={counts.monopoly.total} enabled={play('monopoly')} onClick={() => onPick('monopoly')} />}
+      {counts.yearOfPlenty.total > 0 && <DevHandCard type="yearOfPlenty" count={counts.yearOfPlenty.total} enabled={play('yearOfPlenty')} onClick={() => onPick('yop')} />}
       {counts.victoryPoint.total > 0 && <DevHandCard type="victoryPoint" count={counts.victoryPoint.total} enabled={false} />}
-
-      {picker === 'monopoly' && (
-        <ResourcePicker count={1} title="Monopolise a resource" onPick={(rs) => { dispatch({ type: 'playMonopoly', resource: rs[0] }); setPicker(null); }} onClose={() => setPicker(null)} />
-      )}
-      {picker === 'yop' && (
-        <ResourcePicker count={2} title="Take any two" onPick={(rs) => { dispatch({ type: 'playYearOfPlenty', resources: rs }); setPicker(null); }} onClose={() => setPicker(null)} />
-      )}
     </div>
   );
 }
@@ -729,7 +774,7 @@ function ResourcePicker({ count, title, onPick, onClose }: { count: number; titl
     else setPicked(next);
   };
   return (
-    <div className={`absolute bottom-12 left-1/2 -translate-x-1/2 p-2 ${CARD}`}>
+    <div className={`z-30 shrink-0 p-3 ${CARD}`} role="dialog" aria-label={title}>
       <div className="mb-1 whitespace-nowrap text-center text-[11px] font-semibold text-ink-soft">
         {title} {count === 2 ? `(${picked.length}/2)` : ''}
       </div>
@@ -749,23 +794,119 @@ function ResourcePicker({ count, title, onPick, onClose }: { count: number; titl
 
 function VictoryOverlay({ game }: { game: GameState }) {
   const newGame = useGame((s) => s.newGame);
+  const abandonGame = useGame((s) => s.abandonGame);
+  const startedAt = useGame((s) => s.matchStartedAt);
+  const endedAt = useGame((s) => s.matchEndedAt);
+  const [tab, setTab] = useState<'overview' | 'dice' | 'resources' | 'development' | 'activity'>('overview');
   if (game.phase !== 'gameOver' || game.winner === null) return null;
   const winner = game.players[game.winner];
+  const rows = game.players.map((player) => ({
+    player,
+    points: victoryPoints(game, player.id),
+    towns: Object.values(game.buildings).filter((piece) => piece.owner === player.id && piece.type === 'settlement').length,
+    cities: Object.values(game.buildings).filter((piece) => piece.owner === player.id && piece.type === 'city').length,
+    vpCards: player.devCards.filter((card) => card.type === 'victoryPoint').length,
+    roadAward: game.longestRoad.player === player.id ? VP_LONGEST_ROAD : 0,
+    armyAward: game.largestArmy.player === player.id ? VP_LARGEST_ARMY : 0,
+    route: longestRoadLength(game, player.id),
+  })).sort((a, b) => b.points - a.points || a.player.id - b.player.id);
+  const tabs = ['overview', 'dice', 'resources', 'development', 'activity'] as const;
+  const duration = startedAt ? formatDuration((endedAt ?? Date.now()) - startedAt) : '0:00';
   return (
     <Overlay>
-      <motion.div initial={{ scale: 0.85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 220, damping: 18 }} className={`p-10 text-center ${CARD}`}>
-        <div className="mb-2 text-6xl">🏆</div>
-        <h2 className="font-display text-3xl font-extrabold" style={{ color: PLAYER_CSS[winner.color] }}>{winner.name} wins!</h2>
-        <p className="mb-6 mt-1 text-ink-soft">{victoryPoints(game, winner.id)} victory points</p>
-        <button
-          onClick={() => newGame({ players: game.players.map((p) => ({ name: p.name, isBot: p.isBot })), layout: 'random', rules: game.rules })}
-          className={`${BTN_BASE} bg-p-green px-6 py-3 text-lg text-white hover:-translate-y-0.5 hover:brightness-105`}
-        >
-          Play again
-        </button>
+      <motion.div initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 220, damping: 18 }} className={`flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden p-4 text-center sm:p-6 ${CARD}`}>
+        <div className="flex flex-wrap items-center justify-center gap-x-3">
+          <span className="text-4xl">🏆</span>
+          <div className="text-left"><h2 className="font-display text-2xl font-extrabold sm:text-3xl" style={{ color: PLAYER_CSS[winner.color] }}>{winner.name === 'You' ? 'You win!' : `${winner.name} wins!`}</h2><p className="text-sm text-ink-soft">Turn {game.turn} · {duration}</p></div>
+        </div>
+        <div className="my-4 flex shrink-0 gap-1 overflow-x-auto rounded-xl bg-card-alt p-1">
+          {tabs.map((item) => <button key={item} onClick={() => setTab(item)} className={`min-w-max flex-1 rounded-lg px-3 py-2 text-xs font-extrabold capitalize transition ${tab === item ? 'bg-card text-ink shadow-soft' : 'text-ink-soft hover:bg-ink/10'}`}>{item}</button>)}
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto rounded-2xl bg-card-alt ring-1 ring-ink/10">
+          {tab === 'overview' && <OverviewStats rows={rows} />}
+          {tab === 'dice' && <DiceStats game={game} />}
+          {tab === 'resources' && <ResourceStats game={game} rows={rows} />}
+          {tab === 'development' && <DevelopmentStats rows={rows} />}
+          {tab === 'activity' && <ActivityStats rows={rows} />}
+        </div>
+        <div className="mt-4 flex shrink-0 flex-wrap justify-center gap-2">
+          <button onClick={abandonGame} className={`${BTN_BASE} bg-card-alt px-5 py-2.5 text-sm text-ink hover:bg-ink/10`}>Main menu</button>
+          <button onClick={() => newGame({ players: game.players.map((p) => ({ name: p.name, isBot: p.isBot, color: p.color, botDifficulty: p.botDifficulty ?? undefined })), layout: 'random', rules: game.rules })} className={`${BTN_BASE} bg-p-green px-5 py-2.5 text-sm text-white hover:-translate-y-0.5 hover:brightness-105`}>Play again</button>
+        </div>
       </motion.div>
     </Overlay>
   );
+}
+
+function PlayerResult({ player, rank }: { player: Player; rank?: number }) {
+  const color = PLAYER_CSS[player.color];
+  return <div className="flex min-w-40 items-center gap-2">{rank !== undefined && <span className="w-5 text-center font-extrabold text-ink-faint">{rank}</span>}<span className="flex h-9 w-9 items-center justify-center rounded-full text-base ring-2" style={{ background: `${color}22`, boxShadow: `inset 0 0 0 2px ${color}` }}>{player.isBot ? '🤖' : '🎩'}</span><span className="font-display font-bold text-ink">{player.name}</span></div>;
+}
+
+type StatColumn<T> = { label: string; title?: string; value: (row: T) => number };
+
+function PlayerStatTable<T extends { player: Player }>({ rows, columns, totals = false, ranked = false }: { rows: T[]; columns: StatColumn<T>[]; totals?: boolean; ranked?: boolean }) {
+  const highs = columns.map((column) => Math.max(...rows.map(column.value)));
+  return <table className="w-full min-w-[720px] border-collapse text-sm"><thead><tr className="sticky top-0 z-10 border-b border-ink/10 bg-card-alt text-[11px] uppercase tracking-wide text-ink-faint"><th className="px-3 py-2 text-left">Player</th>{columns.map((column) => <th key={column.label} title={column.title} className="px-2 py-2 text-center">{column.label}</th>)}</tr></thead><tbody>{rows.map((row, rank) => <tr key={row.player.id} className="border-b border-ink/5"><td className="px-3 py-2 text-left"><PlayerResult player={row.player} rank={ranked ? rank + 1 : undefined} /></td>{columns.map((column, index) => { const value = column.value(row); const high = value > 0 && value === highs[index]; return <td key={column.label} className="px-2 py-2 text-center"><span className={`inline-flex min-w-7 justify-center rounded-lg px-2 py-1 font-bold ${high ? 'bg-amber-300 text-amber-950 ring-1 ring-amber-500/40' : 'text-ink-soft'}`}>{value}</span></td>; })}</tr>)}{totals && <tr className="sticky bottom-0 bg-card font-extrabold text-ink"><td className="px-3 py-2 text-left">Total</td>{columns.map((column) => <td key={column.label} className="px-2 py-2 text-center">{rows.reduce((sum, row) => sum + column.value(row), 0)}</td>)}</tr>}</tbody></table>;
+}
+
+function OverviewStats({ rows }: { rows: Array<{ player: Player; points: number; towns: number; cities: number; vpCards: number; roadAward: number; armyAward: number }> }) {
+  const columns: StatColumn<typeof rows[number]>[] = [
+    { label: 'Towns', title: 'Victory points from towns', value: (row) => row.towns },
+    { label: 'Cities', title: 'Victory points from cities', value: (row) => row.cities * 2 },
+    { label: 'VP cards', value: (row) => row.vpCards },
+    { label: 'Road', title: 'Longest Road points', value: (row) => row.roadAward },
+    { label: 'Army', title: 'Largest Army points', value: (row) => row.armyAward },
+    { label: 'Total VP', value: (row) => row.points },
+  ];
+  return <PlayerStatTable rows={rows} columns={columns} ranked />;
+}
+
+const DICE_WAYS: Record<number, number> = { 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 6, 8: 5, 9: 4, 10: 3, 11: 2, 12: 1 };
+function DiceStats({ game }: { game: GameState }) {
+  const total = Object.values(game.diceStats).reduce((sum, count) => sum + count, 0);
+  const peak = Math.max(1, ...Object.values(game.diceStats));
+  return <div className="mx-auto max-w-4xl p-3 sm:p-5"><div className="grid min-w-[620px] grid-cols-11 gap-2 border-b border-ink/10 px-2 pt-3">{Object.keys(DICE_WAYS).map(Number).map((roll) => { const count = game.diceStats[roll] ?? 0; const percent = total ? Math.round(count / total * 100) : 0; const height = count > 0 ? Math.max(5, count / peak * 100) : 0; return <div key={roll} title={`${roll}: ${count} rolls (${percent}%), expected ${Math.round(DICE_WAYS[roll] / 36 * 100)}%`} className="flex h-64 flex-col items-center justify-end"><span className="mb-1 text-xs font-extrabold tabular-nums text-ink">{count}</span><div className="flex h-48 w-full items-end justify-center"><div className="w-full max-w-12 rounded-t-lg bg-p-blue shadow-soft transition-all" style={{ height: `${height}%` }} /></div><span className="mt-1 text-[9px] text-ink-faint">{percent}%</span><span className="pb-2 font-display text-lg font-extrabold text-ink">{roll}</span></div>; })}</div><div className="pt-3 text-sm font-extrabold text-ink">Total gameplay rolls: {total} <span className="ml-2 font-normal text-ink-faint">Opening rolls excluded</span></div></div>;
+}
+
+function ResourceStats<T extends { player: Player }>({ rows }: { game: GameState; rows: T[] }) {
+  const columns: StatColumn<T>[] = [...RESOURCES.map((resource) => ({ label: resource[0].toUpperCase() + resource.slice(1), value: (row: T) => row.player.stats.resourcesCollected[resource] })), { label: 'Total', value: (row: T) => totalResources(row.player.stats.resourcesCollected) }];
+  return <PlayerStatTable rows={rows} columns={columns} totals />;
+}
+
+const DEV_LABELS: Record<DevCardType, string> = { knight: 'Knight', roadBuilding: 'Road Building', monopoly: 'Monopoly', yearOfPlenty: 'Year of Plenty', victoryPoint: 'VP Card' };
+const DEV_TYPES = Object.keys(DEV_LABELS) as DevCardType[];
+function DevelopmentStats<T extends { player: Player }>({ rows }: { rows: T[] }) {
+  const columns: StatColumn<T>[] = [...DEV_TYPES.map((type) => ({ label: DEV_LABELS[type], value: (row: T) => row.player.stats.devCardsCollected[type] })), { label: 'Total', value: (row: T) => DEV_TYPES.reduce((sum, type) => sum + row.player.stats.devCardsCollected[type], 0) }];
+  return <PlayerStatTable rows={rows} columns={columns} totals />;
+}
+
+function ActivityStats<T extends { player: Player; route: number }>({ rows }: { rows: T[] }) {
+  const [mode, setMode] = useState<'building' | 'trading' | 'robber' | 'progress'>('building');
+  const modes = ['building', 'trading', 'robber', 'progress'] as const;
+  const columns: Record<typeof mode, StatColumn<T>[]> = {
+    building: [
+      { label: 'Roads placed', value: (row) => row.player.stats.roadsPlaced },
+      { label: 'Towns placed', value: (row) => row.player.stats.settlementsPlaced },
+      { label: 'Cities built', value: (row) => row.player.stats.citiesBuilt },
+      { label: 'Longest route', value: (row) => row.route },
+    ],
+    trading: [
+      { label: 'Bank trades', value: (row) => row.player.stats.bankTrades },
+      { label: 'Player trades', value: (row) => row.player.stats.playerTrades },
+    ],
+    robber: [
+      { label: 'Robber moved', value: (row) => row.player.stats.robberMoves },
+      { label: 'Knights played', value: (row) => row.player.knightsPlayed },
+      { label: 'Cards discarded', value: (row) => row.player.stats.cardsDiscarded },
+    ],
+    progress: [
+      { label: 'Cards bought', value: (row) => row.player.stats.devCardsBought },
+      { label: 'Cards played', value: (row) => row.player.stats.devCardsPlayed },
+      { label: 'VP cards', value: (row) => row.player.stats.devCardsCollected.victoryPoint },
+    ],
+  };
+  return <div><div className="flex gap-1 border-b border-ink/10 p-2">{modes.map((item) => <button key={item} onClick={() => setMode(item)} className={`flex-1 rounded-lg px-2 py-1.5 text-[11px] font-extrabold capitalize transition ${mode === item ? 'bg-card text-ink shadow-soft' : 'text-ink-soft hover:bg-ink/10'}`}>{item}</button>)}</div><PlayerStatTable rows={rows} columns={columns[mode]} totals /></div>;
 }
 
 function ErrorToast() {
