@@ -1,4 +1,5 @@
 import type { Action } from '../engine/actions';
+import { canAfford } from '../engine/helpers';
 import type { GameState } from '../engine/types';
 
 /**
@@ -25,9 +26,16 @@ const FILES = {
   diceRoll3: 'sfx_dice_roll_3.61bd4619a24415ce2725.mp3',
   diceRoll4: 'sfx_dice_roll_4.ac72a311905cf5bfad2a.mp3',
   roadPlace: 'sfx_road_place.d101fe727f7ff45b8379.mp3',
+  settlementPlace: 'sfx_settlement_place.c5c4ccb495e1499035b1.mp3',
+  cityPlace: 'sfx_city_place.ef88a7889150162d1350.mp3',
+  settlementPhaseEnded: 'sfx_settlement_phase_ended.7e282406bfa6bbac3eb7.mp3',
   robberPlace: 'sfx_robber_place.0636480d74972f958ca9.mp3',
   discardNotification: 'sfx_discard_notification.f8b0f8122a6973c3d615.mp3',
   discardBroadcast: 'sfx_discard_broadcast.6161a89619b65cc63577.mp3',
+  offerAcceptable: 'sfx_offer_acceptable.a5cb7ea299386e908402.mp3',
+  offerNotAcceptable: 'sfx_offer_not_acceptable.d7ca1b7b5f9dc94c6ec5.mp3',
+  offerAccepted: 'sfx_offer_accepted.1db63c4d77a3569babd7.mp3',
+  offerRejected: 'sfx_offer_rejected.9195821ea4c2ce7ae8a5.mp3',
 } as const;
 
 export type SoundKey = keyof typeof FILES;
@@ -94,7 +102,12 @@ export function deriveSounds(before: GameState, after: GameState, action: Action
 
   if (action.type === 'rollDice') out.push(DICE[Math.floor(Math.random() * DICE.length)]);
   if (action.type === 'buildRoad' || action.type === 'placeSetupRoad') out.push('roadPlace');
+  if (action.type === 'buildSettlement' || action.type === 'placeSetupSettlement') out.push('settlementPlace');
+  if (action.type === 'buildCity') out.push('cityPlace');
   if (action.type === 'moveRobber' || action.type === 'playKnight') out.push('robberPlace');
+
+  // Everyone finished their opening settlements/roads — setup is over.
+  if (before.phase === 'setup' && after.phase !== 'setup') out.push('settlementPhaseEnded');
 
   // Someone crossed the 7-card limit and must discard.
   if (before.phase !== 'discard' && after.phase === 'discard') {
@@ -105,6 +118,23 @@ export function deriveSounds(before: GameState, after: GameState, action: Action
   // Award handoffs.
   if (after.largestArmy.player !== before.largestArmy.player && after.largestArmy.player !== null) out.push('largestArmy');
   if (after.longestRoad.player !== before.longestRoad.player && after.longestRoad.player !== null) out.push('longestRoad');
+
+  // Player trade offers.
+  if (action.type === 'createTradeOffer') {
+    const offer = after.tradeOffers[after.tradeOffers.length - 1];
+    if (offer) {
+      if (offer.proposer === humanId) {
+        // The human offered to everyone; bots respond synchronously. If nobody
+        // took it, it's dead; otherwise wait for the human to confirm a partner.
+        if (!Object.values(offer.responses).some((r) => r.status === 'accepted')) out.push('offerRejected');
+      } else if (offer.responses[humanId]?.status === 'pending') {
+        // Someone offered to the human — can they cover what's being asked for?
+        out.push(canAfford(after.players[humanId].resources, offer.receive) ? 'offerAcceptable' : 'offerNotAcceptable');
+      }
+    }
+  }
+  // The proposer confirmed an accepting partner: the trade went through.
+  if (action.type === 'completeTradeOffer') out.push('offerAccepted');
 
   // Control just handed to the human.
   if (before.currentPlayer !== humanId && after.currentPlayer === humanId && after.phase !== 'gameOver') out.push('yourTurn');
