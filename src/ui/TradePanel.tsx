@@ -61,11 +61,12 @@ export function TradePanel({ game, give, onRemoveGive, onResetGive, onClose }: {
 
   const offeredTypes = RESOURCES.filter((resource) => give[resource] > 0);
   const requestedTypes = RESOURCES.filter((resource) => want[resource] > 0);
+  const overlaps = offeredTypes.some((resource) => want[resource] > 0);
   const bankGive = offeredTypes.length === 1 ? offeredTypes[0] : null;
   const bankReceive = requestedTypes.length === 1 && want[requestedTypes[0]] === 1 ? requestedTypes[0] : null;
   const bankRate = bankGive ? bankTradeRatio(game, humanId, bankGive) : 4;
-  const bankReady = !!bankGive && !!bankReceive && wantAny === 0 && give[bankGive] === bankRate && game.bank[bankReceive] > 0;
-  const playersReady = game.rules.allowPlayerTrades && bagTotal(give) > 0 && (wantAny > 0 || bagTotal(want) > 0);
+  const bankReady = !!bankGive && !!bankReceive && bankGive !== bankReceive && wantAny === 0 && give[bankGive] === bankRate && game.bank[bankReceive] > 0;
+  const playersReady = game.rules.allowPlayerTrades && !overlaps && bagTotal(give) > 0 && (wantAny > 0 || bagTotal(want) > 0);
 
   const tradeWithBank = () => {
     if (!bankGive || !bankReceive) return;
@@ -93,7 +94,7 @@ export function TradePanel({ game, give, onRemoveGive, onResetGive, onClose }: {
         </header>
 
         <div className="space-y-2">
-          <ResourcePicker label="Ask for" onPick={addWant} onAny={chooseAny} />
+          <ResourcePicker label="Ask for" onPick={addWant} onAny={chooseAny} disabled={offeredTypes} />
           <div className="rounded-xl bg-card-alt/70 p-2.5 ring-1 ring-black/5 dark:ring-white/10">
             <div>
             <OfferRow label="You receive" bag={want} anyCount={wantAny} onRemove={removeWant} onRemoveAny={removeAny} />
@@ -127,12 +128,14 @@ function OfferRow({ label, bag, anyCount = 0, onRemove, onRemoveAny }: { label: 
   );
 }
 
-function ResourcePicker({ label, onPick, onAny }: { label: string; onPick: (resource: Resource) => void; onAny: () => void }) {
+function ResourcePicker({ label, onPick, onAny, disabled = [] }: { label: string; onPick: (resource: Resource) => void; onAny: () => void; disabled?: Resource[] }) {
   return (
     <div className="rounded-xl bg-ink/[0.035] p-2 ring-1 ring-ink/5 dark:bg-white/[0.04] dark:ring-white/10">
       <span className="mb-1 block text-[10px] font-extrabold uppercase tracking-wide text-ink-faint">{label}</span>
       <div className="flex gap-1 overflow-x-auto pb-1">
-        {RESOURCES.map((resource) => <ResourceButton key={resource} resource={resource} onClick={() => onPick(resource)} />)}
+        {RESOURCES.map((resource) => (
+          <ResourceButton key={resource} resource={resource} onClick={() => onPick(resource)} disabled={disabled.includes(resource)} />
+        ))}
         <button type="button" title="Accept any resource from the other player" onClick={onAny} className="shrink-0 rounded-md transition hover:-translate-y-0.5 hover:shadow-soft"><QuestionCard /></button>
       </div>
     </div>

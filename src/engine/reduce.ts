@@ -821,11 +821,19 @@ function updateLargestArmy(state: GameState): GameState {
   return state;
 }
 
-function checkWin(state: GameState, player = state.currentPlayer): GameState {
-  if (victoryPoints(state, player) >= state.rules.victoryPoints) {
-    return log({ ...state, phase: 'gameOver', winner: player }, `${playerName(state, player)} wins!`);
-  }
-  return state;
+/**
+ * Checks every player, not just the one who acted: Longest Road can flip to a
+ * third party when someone else's settlement severs their road, and that
+ * transfer alone can push the new holder over the threshold. The real game
+ * ends the instant any player reaches the target, regardless of whose turn
+ * caused it, so scan everyone rather than trust the actor to be the only
+ * candidate. Scanning `state.players` in a fixed index order keeps this
+ * deterministic for the seeded-RNG replay guarantee.
+ */
+function checkWin(state: GameState): GameState {
+  const winner = state.players.find((p) => victoryPoints(state, p.id) >= state.rules.victoryPoints);
+  if (!winner) return state;
+  return log({ ...state, phase: 'gameOver', winner: winner.id }, `${playerName(state, winner.id)} wins!`);
 }
 
 /** Developer-only helpers, intentionally routed through the pure reducer. */
@@ -869,5 +877,5 @@ function endTurn(state: GameState): GameState {
     tradeOffers: [],
     log: [...state.log, { turn: state.turn + 1, player: nextPlayer, message: `${playerName(state, nextPlayer)}'s turn` }],
   };
-  return checkWin(next, nextPlayer);
+  return checkWin(next);
 }
