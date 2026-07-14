@@ -149,19 +149,25 @@ export function generateBoard(
   const robberTileId = tiles.find((t) => t.type === 'desert')!.id;
 
   const board: Board = { tiles, vertices, edges, robberTileId };
-  assignPorts(board);
+  let portTypes: readonly PortType[] = PORT_TYPES;
+  if (options.layout === 'random') {
+    const shuffledPorts = shuffle(PORT_TYPES, cursor);
+    portTypes = shuffledPorts.items;
+    cursor = shuffledPorts.rng;
+  }
+  assignPorts(board, portTypes);
 
   return { board, rng: cursor };
 }
 
 /** Place ports on evenly-spaced coastal edges and tag their vertices. */
-function assignPorts(board: Board): void {
+function assignPorts(board: Board, portTypes: readonly PortType[]): void {
   const coastal = board.edges
     .filter((e) => e.coastal)
     .sort((a, b) => angle(a.point) - angle(b.point));
   if (coastal.length === 0) return;
-  const spacing = coastal.length / PORT_TYPES.length;
-  PORT_TYPES.forEach((type, i) => {
+  const spacing = coastal.length / portTypes.length;
+  portTypes.forEach((type, i) => {
     const edge = coastal[Math.floor(i * spacing) % coastal.length];
     for (const vid of edge.vertexIds) board.vertices[vid].port = type;
   });

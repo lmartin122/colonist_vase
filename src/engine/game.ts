@@ -2,6 +2,7 @@ import { generateBoard, type BoardOptions } from './board';
 import {
   BANK_PER_RESOURCE,
   DEV_DECK,
+  MAX_VICTORY_POINTS,
   PLAYER_COLORS,
   STARTING_STOCK,
 } from './constants';
@@ -56,6 +57,10 @@ function emptyPlayerStats(): PlayerStats {
 
 /** Build the initial GameState, beginning with the roll for placement order. */
 export function createGame(config: GameConfig): GameState {
+  const rules = { ...DEFAULT_RULES, ...config.rules };
+  if (!Number.isInteger(rules.victoryPoints) || rules.victoryPoints < 3 || rules.victoryPoints > MAX_VICTORY_POINTS) {
+    throw new RangeError(`Victory points must be a whole number from 3 to ${MAX_VICTORY_POINTS}`);
+  }
   const seed = config.seed ?? (Math.random() * 2 ** 31) | 0;
   let rng: RngState = { seed };
 
@@ -92,7 +97,7 @@ export function createGame(config: GameConfig): GameState {
     dice: null,
     turn: 0,
     rng,
-    rules: { ...DEFAULT_RULES, ...config.rules },
+    rules,
     diceStats: Object.fromEntries(Array.from({ length: 11 }, (_, index) => [index + 2, 0])),
     buildings: {},
     roads: {},

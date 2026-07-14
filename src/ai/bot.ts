@@ -122,6 +122,9 @@ function scoreAction(state: GameState, actor: number, action: Action): number {
   if (!result.ok) return -Infinity;
   let score = evaluateState(result.state, actor) - evaluateState(state, actor);
   if (action.type === 'endTurn') score -= 0.2;
+  // A single road often creates no immediately legal settlement, so the
+  // one-step policy needs a small expansion credit to avoid permanent stalls.
+  if (action.type === 'buildRoad') score += 2.25;
   if (action.type === 'buyDevCard') score += 3.5;
   if (action.type === 'playRoadBuilding') score += 6;
   return score;

@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { generateBoard } from '../src/engine/board';
 import type { Resource } from '../src/engine/types';
 
+function portSequence(board: ReturnType<typeof generateBoard>['board']) {
+  return board.edges
+    .filter((edge) => edge.coastal && board.vertices[edge.vertexIds[0]].port !== null && board.vertices[edge.vertexIds[0]].port === board.vertices[edge.vertexIds[1]].port)
+    .map((edge) => board.vertices[edge.vertexIds[0]].port);
+}
+
 describe('board generation', () => {
   it('produces the canonical 19 / 54 / 72 graph', () => {
     const { board } = generateBoard({ layout: 'classic' }, { seed: 1 });
@@ -59,5 +65,20 @@ describe('board generation', () => {
     const b = generateBoard({ layout: 'random' }, { seed: 123 }).board;
     expect(a.tiles.map((t) => t.type)).toEqual(b.tiles.map((t) => t.type));
     expect(a.tiles.map((t) => t.number)).toEqual(b.tiles.map((t) => t.number));
+    expect(portSequence(a)).toEqual(portSequence(b));
+  });
+
+  it('seed-shuffles random ports while preserving the standard multiset', () => {
+    const a = generateBoard({ layout: 'random' }, { seed: 123 }).board;
+    const b = generateBoard({ layout: 'random' }, { seed: 124 }).board;
+    const expected = ['3:1', '3:1', '3:1', '3:1', 'brick', 'ore', 'sheep', 'wheat', 'wood'];
+    expect([...portSequence(a)].sort()).toEqual(expected);
+    expect(portSequence(a)).not.toEqual(portSequence(b));
+  });
+
+  it('keeps Classic ports fixed across seeds', () => {
+    const a = generateBoard({ layout: 'classic' }, { seed: 1 }).board;
+    const b = generateBoard({ layout: 'classic' }, { seed: 999 }).board;
+    expect(portSequence(a)).toEqual(portSequence(b));
   });
 });

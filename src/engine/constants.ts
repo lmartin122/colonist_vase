@@ -16,6 +16,8 @@ export const BANK_PER_RESOURCE = 19;
 
 /** Victory points to win. */
 export const WIN_POINTS = 10;
+/** Highest score achievable with the standard piece and development-card supply. */
+export const MAX_VICTORY_POINTS = 18;
 
 /** Hand size above which a 7 forces a discard of half (rounded down). */
 export const DISCARD_LIMIT = 7;

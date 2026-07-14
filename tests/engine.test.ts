@@ -151,6 +151,18 @@ describe('victory', () => {
     expect(victoryPoints(s, 0)).toBe(2);
     expect(victoryPoints(s, 1)).toBe(2);
   });
+
+  it('awards victory as soon as a player begins a turn at the target score', () => {
+    let s = autoSetup(newGame(44));
+    const nextPlayer = s.turnOrder[(s.turnOrder.indexOf(s.currentPlayer) + 1) % s.turnOrder.length];
+    const players = s.players.map((player) => player.id === nextPlayer
+      ? { ...player, devCards: [...player.devCards, { type: 'victoryPoint' as const, boughtOnTurn: 0, played: false }] }
+      : player);
+    s = { ...s, players, phase: 'main', rules: { ...s.rules, victoryPoints: 3 } };
+    const ended = applyOrThrow(s, { type: 'endTurn' });
+    expect(ended.phase).toBe('gameOver');
+    expect(ended.winner).toBe(nextPlayer);
+  });
 });
 
 // --- test-only mutation helpers (bypass the reducer to set up scenarios) ----
