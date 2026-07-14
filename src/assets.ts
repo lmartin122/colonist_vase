@@ -1,4 +1,4 @@
-import type { DevCardType, PlayerColor, Resource, TileType } from './engine/types';
+import type { DevCardType, PlayerColor, PortType, Resource, TileType } from './engine/types';
 
 /**
  * Central registry of the SVG art (served from /public/assets). One source of
@@ -59,6 +59,38 @@ export const LARGEST_ROAD_HL = `${BASE}/largest_road_icon_highlight.svg`;
 
 /** Trade action icon. */
 export const TRADE_ICON = `${BASE}/trade_icon.svg`;
+
+/**
+ * Port art, carved from the packed atlases (see render/spritesheet.ts). The ship
+ * sail already shows the ratio + resource, so the renderer just places these:
+ * one trade ship per port, plus a wooden pier from the ship to each of its two
+ * buildable vertices. Keys double as their TextureMap keys.
+ */
+export const PORT_SHIP_FRAME: Record<PortType, string> = {
+  '3:1': 'port',
+  wood: 'port_lumber',
+  brick: 'port_brick',
+  sheep: 'port_wool',
+  wheat: 'port_grain',
+  ore: 'port_ore',
+};
+export const PORT_PIER_FRAME = 'port_pier';
+
+/**
+ * Shoreline composites. Each is placed on a sea position just outside the island
+ * with beach on the sides that face land (sand outward, foam toward the ocean),
+ * matched by rotation. `sides` lists the beach sides at rotation 0, where side i
+ * has outward normal (-60 + 60·i)° — clockwise from the upper-right. The standard
+ * board only ever needs a single side or two adjacent sides.
+ */
+export interface ShoreTile {
+  frame: string;
+  sides: number[];
+}
+export const SHORE_TILES: ShoreTile[] = [
+  { frame: 'tile_shore_1', sides: [0] },
+  { frame: 'tile_shore_2_sswwww', sides: [0, 1] },
+];
 
 /** Face art for a single die result. */
 export function diceAsset(value: number): string {

@@ -1,24 +1,51 @@
 import { Application, Circle, Container, FillGradient, Graphics, Sprite, Text, TextStyle } from 'pixi.js';
 import type { Board, GameState, PlayerColor, PortType, TileType } from '../engine/types';
 import { NUMBER_PIPS } from '../engine/constants';
-import { HEX_ASSET, cityAsset, roadAsset, settlementAsset } from '../assets';
-import { HEX_SIZE, distance } from '../engine/coords';
+import { HEX_ASSET, PORT_PIER_FRAME, PORT_SHIP_FRAME, SHORE_TILES, cityAsset, roadAsset, settlementAsset } from '../assets';
+import { HEX_SIZE, axialToPixel, distance } from '../engine/coords';
 import type { TextureMap } from './textures';
 import {
   HIGHLIGHT,
-  OCEAN,
-  OCEAN_DEEP,
-  OCEAN_WAVE,
+  LAND_SAND,
   PLAYER_HEX,
   ROBBER_COLOR,
   TILE_COLORS,
   TILE_COLORS_LIGHT,
   TILE_MOTIF,
-  TILE_STROKE,
   TOKEN_BG,
   TOKEN_HOT,
   TOKEN_INK,
 } from './palette';
+
+/** Axial offset toward each hex side, indexed by side (0 = upper-right, clockwise). */
+const SHORE_SIDE_DIRS = [
+  { q: 1, r: -1 },
+  { q: 1, r: 0 },
+  { q: 0, r: 1 },
+  { q: -1, r: 1 },
+  { q: -1, r: 0 },
+  { q: 0, r: -1 },
+];
+/** Grow the shore sprite slightly past its hex so the sand meets the land. */
+const SHORE_OVERSCALE = 1.08;
+/** Terrain tiles sit slightly inset so the flat sand base shows as clean joints.
+ * Kept close to 1 so the joints stay thin and placed roads overlap the tile edge. */
+const TILE_INSET = 0.992;
+
+/** Find the shore composite + rotation whose beach sides match the given sides. */
+function matchShore(mask: number[]): { frame: string; rot: number } | null {
+  const target = [...mask].sort((a, b) => a - b).join(',');
+  for (const tile of SHORE_TILES) {
+    for (let rot = 0; rot < 6; rot++) {
+      const rotated = tile.sides
+        .map((s) => (s + rot) % 6)
+        .sort((a, b) => a - b)
+        .join(',');
+      if (rotated === target) return { frame: tile.frame, rot };
+    }
+  }
+  return null;
+}
 
 export interface InteractionMode {
   vertices?: number[];
@@ -44,7 +71,8 @@ interface Anim {
  */
 export class BoardRenderer {
   readonly view = new Container();
-  private readonly water = new Container();
+  private readonly shore = new Container();
+  private readonly land = new Container();
   private readonly tiles = new Container();
   private readonly ports = new Container();
   private readonly pieces = new Container();
@@ -64,7 +92,7 @@ export class BoardRenderer {
     private readonly app: Application,
     private readonly tex: TextureMap = {},
   ) {
-    this.view.addChild(this.water, this.tiles, this.ports, this.overlay, this.pieces);
+    this.view.addChild(this.land, this.shore, this.tiles, this.ports, this.overlay, this.pieces);
     app.stage.addChild(this.view);
     app.ticker.add((t) => this.tick(t.deltaMS));
   }
@@ -81,50 +109,91 @@ export class BoardRenderer {
     this.board = board;
     this.tiles.removeChildren();
     this.ports.removeChildren();
-    this.water.removeChildren();
+    this.land.removeChildren();
+    this.shore.removeChildren();
     this.pieces.removeChildren();
     this.seenBuildings.clear();
     this.seenRoads.clear();
     this.robberSprite = null;
 
-    this.drawWater(board);
+    this.drawShore(board);
+    this.drawLand(board);
     for (const tile of board.tiles) this.drawTile(board, tile.id);
     this.drawPorts(board);
     this.fit();
   }
 
-  private drawWater(board: Board): void {
-    const maxR = Math.max(...board.vertices.map((v) => Math.hypot(v.point.x, v.point.y)));
+  /**
+   * Flat sand the tiles rest on. Filling the whole island footprint in one solid
+   * colour makes every joint between tiles read as clean sand (the tiles sit
+   * slightly inset on top), with no borders or shadows. The open ocean is just
+   * the canvas background, so there is nothing else to draw for the water.
+   */
+  private drawLand(board: Board): void {
     const g = new Graphics();
-    // Calm layered ocean.
-    g.circle(0, 0, maxR + 140).fill(OCEAN_DEEP);
-    g.circle(0, 0, maxR + 78).fill(OCEAN);
-    // Subtle concentric wave accents around the island.
-    for (let i = 0; i < 3; i++) {
-      const r = maxR + 44 + i * 26;
-      g.circle(0, 0, r).stroke({ width: 2, color: OCEAN_WAVE, alpha: 0.18 - i * 0.04 });
+    for (const tile of board.tiles) {
+      const { x: cx, y: cy } = tile.center;
+      const pts: number[] = [];
+      for (const v of tile.vertexIds) {
+        const p = board.vertices[v].point;
+        pts.push(cx + (p.x - cx) * 1.03, cy + (p.y - cy) * 1.03);
+      }
+      g.poly(pts).fill(LAND_SAND);
     }
-    // Soft light rim just inside the coastline.
-    g.circle(0, 0, maxR + 30).stroke({ width: 6, color: OCEAN_WAVE, alpha: 0.14 });
-    this.water.addChild(g);
+    this.land.addChild(g);
+  }
+
+  /**
+   * Sandy shoreline. For every sea position adjacent to the island we pick the
+   * shore composite whose beach sides match the sides facing land, rotate it into
+   * place, and draw it centred on that sea hex. The sprites carry sand on the
+   * land-facing side and foam toward the ocean, and — being whole-hex composites
+   * — join cleanly at the corners instead of overlapping like per-edge segments.
+   */
+  private drawShore(board: Board): void {
+    const land = new Set(board.tiles.map((t) => `${t.axial.q},${t.axial.r}`));
+    const sea = new Map<string, { q: number; r: number }>();
+    for (const t of board.tiles) {
+      for (const d of SHORE_SIDE_DIRS) {
+        const q = t.axial.q + d.q;
+        const r = t.axial.r + d.r;
+        const key = `${q},${r}`;
+        if (!land.has(key)) sea.set(key, { q, r });
+      }
+    }
+    for (const { q, r } of sea.values()) {
+      const mask: number[] = [];
+      for (let i = 0; i < 6; i++) {
+        if (land.has(`${q + SHORE_SIDE_DIRS[i].q},${r + SHORE_SIDE_DIRS[i].r}`)) mask.push(i);
+      }
+      if (mask.length === 0) continue;
+      const match = matchShore(mask);
+      if (!match) continue;
+      const sprite = this.sprite(match.frame);
+      if (!sprite) continue;
+      const center = axialToPixel({ q, r });
+      sprite.anchor.set(0.5);
+      sprite.scale.set((HEX_SIZE * 2 * SHORE_OVERSCALE) / sprite.texture.height);
+      sprite.rotation = (match.rot * Math.PI) / 3;
+      sprite.position.set(center.x, center.y);
+      this.shore.addChild(sprite);
+    }
   }
 
   private drawTile(board: Board, tileId: number): void {
     const tile = board.tiles[tileId];
     const { x: cx, y: cy } = tile.center;
-    const pts = tile.vertexIds.flatMap((v) => [board.vertices[v].point.x, board.vertices[v].point.y]);
-
-    // Soft drop shadow beneath the tile for gentle depth.
-    const shadow = new Graphics();
-    shadow.poly(pts).fill({ color: 0x0a1a24, alpha: 0.28 });
-    shadow.position.set(0, 7);
-    this.tiles.addChild(shadow);
+    const pts = tile.vertexIds.flatMap((v) => {
+      const p = board.vertices[v].point;
+      return [cx + (p.x - cx) * TILE_INSET, cy + (p.y - cy) * TILE_INSET];
+    });
 
     const hexSprite = this.sprite(HEX_ASSET[tile.type]);
     if (hexSprite) {
-      // SVG terrain art (includes the resource motif) scaled to the tile height.
+      // SVG terrain art (includes the resource motif), sitting slightly inset so
+      // the flat sand base shows through as a clean joint between tiles.
       hexSprite.anchor.set(0.5);
-      hexSprite.scale.set((HEX_SIZE * 2) / hexSprite.texture.height);
+      hexSprite.scale.set((HEX_SIZE * 2 * TILE_INSET) / hexSprite.texture.height);
       hexSprite.position.set(cx, cy);
       this.tiles.addChild(hexSprite);
     } else {
@@ -140,7 +209,7 @@ export class BoardRenderer {
         textureSpace: 'local',
       });
       const g = new Graphics();
-      g.poly(pts).fill(grad).stroke({ width: 3, color: TILE_STROKE, alpha: 0.35 });
+      g.poly(pts).fill(grad);
       this.tiles.addChild(g);
       this.drawTerrainMotif(tile.type, cx, cy - 20);
     }
@@ -236,6 +305,7 @@ export class BoardRenderer {
       pipGfx.circle(-spread / 2 + i * 4, 12, 1.6).fill(hot ? TOKEN_HOT : 0x8a8172);
     }
     group.addChild(disc, label, pipGfx);
+    group.scale.set(1.61); // larger number tokens (40% + a further 15%)
     group.position.set(x, y);
     this.tiles.addChild(group);
   }
@@ -247,30 +317,69 @@ export class BoardRenderer {
       const pa = board.vertices[a].port;
       const pb = board.vertices[b].port;
       if (!pa || pa !== pb) continue; // a port occupies both vertices of one edge
-      this.drawPortBadge(board, edge.point, pa);
+      this.drawPort(edge.point, board.vertices[a].point, board.vertices[b].point, pa);
     }
   }
 
-  private drawPortBadge(_board: Board, mid: { x: number; y: number }, port: PortType): void {
-    const len = Math.hypot(mid.x, mid.y) || 1;
-    const nx = mid.x / len;
-    const ny = mid.y / len;
-    const px = mid.x + nx * 48;
-    const py = mid.y + ny * 48;
+  /**
+   * A port is a trade ship sitting just off the coast with a wooden pier running
+   * to each of its two buildable vertices. The ship sail already carries the
+   * ratio + resource art, so no text overlay is needed.
+   */
+  private drawPort(
+    mid: { x: number; y: number },
+    va: { x: number; y: number },
+    vb: { x: number; y: number },
+    port: PortType,
+  ): void {
+    // Offset the ship along the edge's outward perpendicular bisector so both
+    // piers come out the same length (rather than the radial direction, which
+    // leaves one pier long and one short on tilted edges).
+    let px = -(vb.y - va.y);
+    let py = vb.x - va.x;
+    const plen = Math.hypot(px, py) || 1;
+    px /= plen;
+    py /= plen;
+    if (px * mid.x + py * mid.y < 0) { px = -px; py = -py; } // point outward, away from center
+    const ship = { x: mid.x + px * 58, y: mid.y + py * 58 };
+
+    // Piers first so the ship hull overlaps their seaward end.
+    this.addPier(ship, va);
+    this.addPier(ship, vb);
+
+    const sprite = this.sprite(PORT_SHIP_FRAME[port]);
+    if (sprite) {
+      sprite.anchor.set(0.5, 0.7); // waterline near the ship point, sail above
+      sprite.scale.set(84 / sprite.texture.height);
+      sprite.position.set(ship.x, ship.y);
+      this.ports.addChild(sprite);
+      return;
+    }
+
+    // Fallback badge if the atlas frame failed to load.
     const g = new Graphics();
-    // Dotted connector from the coast to the badge.
-    g.moveTo(mid.x + nx * 10, mid.y + ny * 10).lineTo(px, py).stroke({ width: 3, color: 0xf3ecdd, alpha: 0.4 });
-    // Warm rounded badge with a soft shadow.
-    g.roundRect(px - 24, py - 12 + 3, 48, 24, 9).fill({ color: 0x0a1a24, alpha: 0.25 });
-    g.roundRect(px - 24, py - 12, 48, 24, 9).fill(TOKEN_BG).stroke({ width: 1.5, color: 0x000000, alpha: 0.06 });
-    if (port !== '3:1') g.circle(px - 13, py, 6).fill(TILE_COLORS[port]);
+    g.roundRect(ship.x - 24, ship.y - 12, 48, 24, 9).fill(TOKEN_BG).stroke({ width: 1.5, color: 0x000000, alpha: 0.06 });
+    if (port !== '3:1') g.circle(ship.x - 13, ship.y, 6).fill(TILE_COLORS[port]);
     const label = new Text({
       text: port === '3:1' ? '3:1' : '2:1',
       style: new TextStyle({ fontFamily: 'Baloo 2, Nunito, sans-serif', fontSize: 13, fontWeight: '800', fill: TOKEN_INK }),
     });
     label.anchor.set(0.5);
-    label.position.set(port === '3:1' ? px : px + 6, py);
+    label.position.set(port === '3:1' ? ship.x : ship.x + 6, ship.y);
     this.ports.addChild(g, label);
+  }
+
+  private addPier(from: { x: number; y: number }, to: { x: number; y: number }): void {
+    const pier = this.sprite(PORT_PIER_FRAME);
+    if (!pier) return;
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    pier.anchor.set(0.5, 0.5);
+    pier.rotation = Math.atan2(dy, dx) - Math.PI / 2; // art runs along its height
+    pier.scale.set(15 / pier.texture.width, dist / pier.texture.height);
+    pier.position.set((from.x + to.x) / 2, (from.y + to.y) / 2);
+    this.ports.addChild(pier);
   }
 
   /** Reflect the dynamic parts of state: robber, roads, buildings. */

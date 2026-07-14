@@ -46,7 +46,8 @@ export function GameCanvas() {
       await instance.init({
         resizeTo: host,
         antialias: true,
-        backgroundAlpha: 0,
+        backgroundColor: 0x0966a5,
+        backgroundAlpha: 1,
         resolution: window.devicePixelRatio || 1,
         autoDensity: true,
       });

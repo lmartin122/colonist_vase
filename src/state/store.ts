@@ -5,6 +5,7 @@ import { createGame, type GameConfig } from '../engine/game';
 import { reduce } from '../engine/reduce';
 import type { GameState } from '../engine/types';
 import { deriveFlights, emitFlights } from './flights';
+import { deriveSounds, playSound, playSounds } from './sounds';
 
 /** What the human is currently placing on the board (drives board highlights). */
 export type BuildMode =
@@ -132,6 +133,7 @@ export const useGame = create<Store>((set, get) => {
         }
         set({ game: result.state, ...timingFor(result.state) });
         emitFlights(deriveFlights(current, result.state, action, humanId));
+        playSounds(deriveSounds(current, result.state, action, humanId));
       }
     } finally {
       botRunning = false;
@@ -173,6 +175,7 @@ export const useGame = create<Store>((set, get) => {
 
     newGame(config) {
       set({ game: createGame(config), build: null, error: null, humanId: 0, debugInfiniteTimer: null, matchStartedAt: Date.now(), matchEndedAt: null });
+      playSound('gameStarted');
       void runBots();
     },
 
@@ -190,6 +193,7 @@ export const useGame = create<Store>((set, get) => {
       }
       set({ game: result.state, error: null, build: null, ...timingFor(result.state) });
       emitFlights(deriveFlights(game, result.state, action, get().humanId));
+      playSounds(deriveSounds(game, result.state, action, get().humanId));
       void runBots();
       return true;
     },

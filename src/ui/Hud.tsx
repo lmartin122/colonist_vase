@@ -10,6 +10,7 @@ import { emptyBank, RESOURCES } from '../engine/types';
 import { PLAYER_CSS } from '../render/palette';
 import { useGame } from '../state/store';
 import { CardFlights } from './CardFlights';
+import { SoundManager } from './SoundManager';
 import { DebugPanel } from '../debug/DebugPanel';
 import { Sidebar } from './Sidebar';
 import { TradePanel } from './TradePanel';
@@ -52,6 +53,7 @@ export function Hud() {
       <VictoryOverlay game={game} />
       <ErrorToast />
       <CardFlights />
+      <SoundManager />
       <DebugPanel />
     </div>
   );
