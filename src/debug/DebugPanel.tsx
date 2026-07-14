@@ -3,6 +3,7 @@ import type { DevCardType } from '../engine/types';
 import { RESOURCES } from '../engine/types';
 import { RESOURCE_CARD } from '../assets';
 import { useGame } from '../state/store';
+import { PortEditor } from './PortEditor';
 
 const DEV_CARDS: { value: DevCardType; label: string }[] = [
   { value: 'knight', label: 'Knight' },
@@ -86,6 +87,8 @@ export function DebugPanel() {
           </div>
           <button type="button" onClick={simulatePhase} className="mt-2 w-full rounded-xl bg-violet-700 px-3 py-2 text-xs font-extrabold text-white transition hover:bg-violet-600">Simulate {game.phase}</button>
           <button type="button" onClick={simulateToGameEnd} className="mt-2 w-full rounded-xl bg-ink px-3 py-2 text-xs font-extrabold text-card transition hover:brightness-125">Fast-forward to game end</button>
+
+          <PortEditor />
         </section>
       )}
     </div>

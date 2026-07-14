@@ -7,6 +7,7 @@ import {
 import type {
   GameState,
   Player,
+  PortType,
   Resource,
   ResourceBank,
 } from './types';
@@ -32,6 +33,10 @@ export function canAfford(bank: ResourceBank, cost: Partial<ResourceBank>): bool
 
 export function isResource(value: unknown): value is Resource {
   return typeof value === 'string' && (RESOURCES as readonly string[]).includes(value);
+}
+
+export function isPortType(value: unknown): value is PortType {
+  return value === '3:1' || isResource(value);
 }
 
 /** Runtime validation for action payloads that may eventually arrive over the network. */

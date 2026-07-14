@@ -10,6 +10,7 @@ import {
   botAcceptsTrade,
   bankTradeRatio,
   canAfford,
+  isPortType,
   isResource,
   resourceBundlesOverlap,
   resourceBundleTotal,
@@ -19,7 +20,7 @@ import {
   victoryPoints,
 } from './helpers';
 import { connectedByRoad, legalRoadEdges, robberTargetTiles, roadConnects, settlementSpotOpen, stealableOpponents } from './placement';
-import type { DevCardType, GameState, Player, Resource, ResourceBank, TradeOfferResponse } from './types';
+import type { DevCardType, GameState, Player, PortType, Resource, ResourceBank, TradeOfferResponse } from './types';
 import { RESOURCES } from './types';
 
 /**
@@ -121,6 +122,8 @@ function apply(state: GameState, action: Action): GameState {
       return debugGrantDevCard(state, action.player, action.card);
     case 'debugTriggerRobber':
       return debugTriggerRobber(state);
+    case 'debugSetPorts':
+      return debugSetPorts(state, action.ports);
     case 'endTurn':
       return endTurn(state);
   }
@@ -850,6 +853,35 @@ function debugGrantDevCard(state: GameState, player: number, card: DevCardType):
 function debugTriggerRobber(state: GameState): GameState {
   if (state.phase !== 'roll' && state.phase !== 'main') fail('Robber can only be triggered during a turn');
   return log({ ...state, phase: 'moveRobber', pending: { ...state.pending, discards: {} } }, 'Debug: robber placement started');
+}
+
+/**
+ * Retag a batch of coastal edges' ports in one state transition for the
+ * in-game port editor (see src/debug/ports.ts), which always recomputes every
+ * port position + type together so the board can't end up with an invalid
+ * ratio of port types.
+ *
+ * Adjacent coastal edges share a vertex, so this can't null out an edge's
+ * vertices one edge at a time — that would erase a neighboring edge's port
+ * the moment its shared vertex gets visited. Instead resolve every edge into
+ * one vertex->port map first, then apply it in a single pass.
+ */
+function debugSetPorts(state: GameState, ports: { edge: number; port: PortType | null }[]): GameState {
+  const portByVertex = new Map<number, PortType>();
+  const touched = new Set<number>();
+  for (const { edge, port } of ports) {
+    const target = state.board.edges[edge];
+    if (!target || !target.coastal) fail('Unknown coastal edge');
+    if (port !== null && !isPortType(port)) fail('Unknown port type');
+    for (const vid of target.vertexIds) {
+      touched.add(vid);
+      if (port !== null) portByVertex.set(vid, port);
+    }
+  }
+  const vertices = state.board.vertices.map((v) =>
+    touched.has(v.id) ? { ...v, port: portByVertex.get(v.id) ?? null } : v);
+  const next = { ...state, board: { ...state.board, vertices } };
+  return log(next, `Debug: updated port layout (${ports.filter((p) => p.port).length} ports)`);
 }
 
 function endTurn(state: GameState): GameState {

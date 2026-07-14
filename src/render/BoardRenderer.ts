@@ -310,6 +310,13 @@ export class BoardRenderer {
     this.tiles.addChild(group);
   }
 
+  /** Redraw just the port ships/piers in place, without rebuilding tiles or refitting the camera. Used by the debug port editor so edits don't reset the current pan/zoom. */
+  refreshPorts(board: Board): void {
+    this.board = board;
+    this.ports.removeChildren();
+    this.drawPorts(board);
+  }
+
   private drawPorts(board: Board): void {
     for (const edge of board.edges) {
       if (!edge.coastal) continue;
