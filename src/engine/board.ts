@@ -165,12 +165,8 @@ export function generateBoard(
   return { board, rng: cursor };
 }
 
-/**
- * Coastal edges ordered clockwise around the island. This is the canonical
- * order port placement (and the debug port editor's export) is indexed by, so
- * it must stay a pure function of board geometry.
- */
-export function coastalEdgesByAngle(board: Board): Edge[] {
+/** Coastal edges ordered clockwise around the island — the order `PORT_POSITIONS` indexes into. */
+function coastalEdgesByAngle(board: Board): Edge[] {
   return board.edges
     .filter((e) => e.coastal)
     .sort((a, b) => angle(a.point) - angle(b.point));
@@ -181,9 +177,8 @@ export function coastalEdgesByAngle(board: Board): Edge[] {
  * hold a port on the real classic Catan board. Port position is a function of
  * the board's physical hex shape, not which resource ended up on each tile,
  * so this applies to every layout — only the port *types* assigned to these
- * positions vary (fixed order for classic, shuffled for random). Captured
- * with the in-game debug port editor; the previous evenly-spaced-by-angle
- * placement didn't match the real board.
+ * positions vary (fixed order for classic, shuffled for random). The previous
+ * evenly-spaced-by-angle placement didn't match the real board.
  */
 const PORT_POSITIONS = [0, 3, 7, 10, 13, 17, 20, 23, 27];
 

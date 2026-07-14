@@ -27,7 +27,6 @@ export interface Store {
   theme: Theme;
   debugEnabled: boolean;
   debugInfiniteTimer: { player: number; turn: number } | null;
-  debugPortEditMode: boolean;
   matchStartedAt: number | null;
   matchEndedAt: number | null;
 
@@ -39,7 +38,6 @@ export interface Store {
   toggleTheme: () => void;
   enableDebug: () => void;
   toggleDebugInfiniteTimer: () => void;
-  toggleDebugPortEditMode: () => void;
   fastForwardTurn: () => void;
   simulatePhase: () => void;
   simulateToGameEnd: () => void;
@@ -172,18 +170,17 @@ export const useGame = create<Store>((set, get) => {
     theme: initialTheme(),
     debugEnabled: false,
     debugInfiniteTimer: null,
-    debugPortEditMode: false,
     matchStartedAt: null,
     matchEndedAt: null,
 
     newGame(config) {
-      set({ game: createGame(config), build: null, error: null, humanId: 0, debugInfiniteTimer: null, debugPortEditMode: false, matchStartedAt: Date.now(), matchEndedAt: null });
+      set({ game: createGame(config), build: null, error: null, humanId: 0, debugInfiniteTimer: null, matchStartedAt: Date.now(), matchEndedAt: null });
       playSound('gameStarted');
       void runBots();
     },
 
     abandonGame() {
-      set({ game: null, build: null, thinking: false, error: null, debugInfiniteTimer: null, debugPortEditMode: false, matchStartedAt: null, matchEndedAt: null });
+      set({ game: null, build: null, thinking: false, error: null, debugInfiniteTimer: null, matchStartedAt: null, matchEndedAt: null });
     },
 
     dispatch(action) {
@@ -225,10 +222,6 @@ export const useGame = create<Store>((set, get) => {
       if (!game) return;
       const current = get().debugInfiniteTimer;
       set({ debugInfiniteTimer: current?.player === game.currentPlayer && current.turn === game.turn ? null : { player: game.currentPlayer, turn: game.turn } });
-    },
-
-    toggleDebugPortEditMode() {
-      set({ debugPortEditMode: !get().debugPortEditMode });
     },
 
     fastForwardTurn() {

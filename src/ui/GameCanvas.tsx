@@ -6,7 +6,6 @@ import { BoardRenderer } from '../render/BoardRenderer';
 import { setTileLocator } from '../render/boardAnchors';
 import { loadBoardTextures } from '../render/textures';
 import { PLAYER_CSS } from '../render/palette';
-import { togglePort } from '../debug/ports';
 import { deriveInteraction } from '../state/interaction';
 import { useGame } from '../state/store';
 
@@ -29,7 +28,6 @@ export function GameCanvas() {
   const build = useGame((s) => s.build);
   const humanId = useGame((s) => s.humanId);
   const dispatch = useGame((s) => s.dispatch);
-  const debugPortEditMode = useGame((s) => s.debugPortEditMode);
   const requestRobberVictim = useCallback((tile: number, action: 'moveRobber' | 'playKnight', victims: number[]) => {
     setRobberChoice({ tile, action, victims });
   }, []);
@@ -92,28 +90,18 @@ export function GameCanvas() {
     const renderer = rendererRef.current;
     if (!renderer || !game) return;
     if (lastBoard.current !== game.board) {
-      // Port-only edits from the debug port editor redraw in place so they don't
-      // reset the camera or replay every piece's pop-in animation mid-edit.
-      if (debugPortEditMode && lastBoard.current) renderer.refreshPorts(game.board);
-      else renderer.buildBoard(game.board);
+      renderer.buildBoard(game.board);
       lastBoard.current = game.board;
     }
     renderer.sync(game);
-  }, [game, ready, debugPortEditMode]);
+  }, [game, ready]);
 
   // Placement highlights + click handlers.
   useEffect(() => {
     const renderer = rendererRef.current;
     if (!renderer) return;
-    if (debugPortEditMode && game) {
-      renderer.setInteraction({
-        edges: game.board.edges.filter((e) => e.coastal).map((e) => e.id),
-        onEdge: (edgeId) => dispatch({ type: 'debugSetPorts', ports: togglePort(game.board, edgeId) }),
-      });
-      return;
-    }
     renderer.setInteraction(robberChoice ? null : deriveInteraction(game, build, humanId, dispatch, requestRobberVictim));
-  }, [game, build, humanId, dispatch, ready, requestRobberVictim, robberChoice, debugPortEditMode]);
+  }, [game, build, humanId, dispatch, ready, requestRobberVictim, robberChoice]);
 
   const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;

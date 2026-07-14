@@ -1,4 +1,4 @@
-import type { DevCardType, PortType, Resource } from './types';
+import type { DevCardType, Resource } from './types';
 
 /**
  * Every mutation to the game goes through one of these actions and the pure
@@ -37,7 +37,6 @@ export type Action =
   | { type: 'debugAddResources'; player: number; resources: Partial<Record<Resource, number>> }
   | { type: 'debugGrantDevCard'; player: number; card: DevCardType }
   | { type: 'debugTriggerRobber' }
-  | { type: 'debugSetPorts'; ports: { edge: number; port: PortType | null }[] }
   // Turn end
   | { type: 'endTurn' };
 
