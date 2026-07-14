@@ -10,11 +10,15 @@ import {
   botAcceptsTrade,
   bankTradeRatio,
   canAfford,
+  isResource,
+  resourceBundlesOverlap,
+  resourceBundleTotal,
   subtractResources,
   totalResources,
+  validateResourceBundle,
   victoryPoints,
 } from './helpers';
-import { connectedByRoad, legalRoadEdges, roadConnects, settlementSpotOpen } from './placement';
+import { connectedByRoad, legalRoadEdges, robberTargetTiles, roadConnects, settlementSpotOpen, stealableOpponents } from './placement';
 import type { DevCardType, GameState, Player, Resource, ResourceBank, TradeOfferResponse } from './types';
 import { RESOURCES } from './types';
 
@@ -40,6 +44,27 @@ export function applyOrThrow(state: GameState, action: Action): GameState {
 
 function fail(message: string): never {
   throw new Error(message);
+}
+
+function requirePlayer(state: GameState, player: number): void {
+  if (!Number.isInteger(player) || player < 0 || state.players[player]?.id !== player) fail('Unknown player');
+}
+
+function requireResource(resource: unknown): asserts resource is Resource {
+  if (!isResource(resource)) fail('Unknown resource');
+}
+
+function validateTradeBundles(
+  give: Partial<Record<Resource, number>>,
+  receive: Partial<Record<Resource, number>>,
+  allowEmptyReceive = false,
+): void {
+  validateResourceBundle(give, 'Offered resources');
+  validateResourceBundle(receive, 'Requested resources');
+  if (resourceBundleTotal(give) <= 0 || (!allowEmptyReceive && resourceBundleTotal(receive) <= 0)) {
+    fail('Trade must include cards on both sides');
+  }
+  if (resourceBundlesOverlap(give, receive)) fail('Cannot trade a resource for the same resource');
 }
 
 // ---------------------------------------------------------------------------
@@ -327,6 +352,8 @@ function produceResources(state: GameState, roll: number): GameState {
 
 function discard(state: GameState, player: number, resources: Partial<Record<Resource, number>>): GameState {
   if (state.phase !== 'discard') fail('No discards required now');
+  requirePlayer(state, player);
+  validateResourceBundle(resources, 'Discarded resources');
   const required = state.pending.discards[player];
   if (required === undefined) fail('This player does not need to discard');
   const count = RESOURCES.reduce((sum, r) => sum + (resources[r] ?? 0), 0);
@@ -358,20 +385,10 @@ function applyRobber(
   stealFrom: number | null,
   nextPhase: GameState['phase'],
 ): GameState {
-  if (tile === state.board.robberTileId) fail('Robber must move to a different tile');
+  if (!Number.isInteger(tile) || !state.board.tiles[tile]) fail('Unknown robber tile');
+  if (!robberTargetTiles(state).includes(tile)) fail('Robber cannot move to that tile');
   const actor = state.currentPlayer;
-
-  const occupants = new Set<number>();
-  for (const vid of state.board.tiles[tile].vertexIds) {
-    const b = state.buildings[vid];
-    if (
-      b && b.owner !== actor &&
-      (!state.rules.friendlyRobber || victoryPoints(state, b.owner) >= 3) &&
-      totalResources(state.players[b.owner].resources) > 0
-    ) {
-      occupants.add(b.owner);
-    }
-  }
+  const occupants = new Set(stealableOpponents(state, tile, actor));
 
   let next: GameState = { ...state, board: { ...state.board, robberTileId: tile } };
 
@@ -417,10 +434,15 @@ function buildRoad(state: GameState, edge: number): GameState {
   if (state.pending.freeRoads > 0) {
     if (state.phase !== 'roll' && state.phase !== 'main') fail('Cannot place a free road now');
     const placed = placeRoad(state, edge);
-    return { ...placed, pending: { ...placed.pending, freeRoads: placed.pending.freeRoads - 1 } };
+    return normalizeFreeRoads(placed, placed.pending.freeRoads - 1);
   }
   requireMain(state);
   return placeRoad(spend(state, state.currentPlayer, COSTS.road), edge);
+}
+
+function normalizeFreeRoads(state: GameState, requested: number): GameState {
+  const freeRoads = requested > 0 && legalRoadEdges(state, state.currentPlayer).length > 0 ? requested : 0;
+  return { ...state, pending: { ...state.pending, freeRoads } };
 }
 
 /** Count every card entering a hand without coupling individual actions to statistics. */
@@ -589,11 +611,12 @@ function playRoadBuilding(state: GameState): GameState {
   next = markDevPlayed(next);
   // Grant up to two free roads (capped by remaining stock); placed via buildRoad.
   const free = Math.min(2, next.players[next.currentPlayer].stock.roads);
-  next = { ...next, pending: { ...next.pending, freeRoads: free } };
+  next = normalizeFreeRoads(next, free);
   return log(next, `${playerName(next, next.currentPlayer)} played Road Building`);
 }
 
 function playMonopoly(state: GameState, resource: Resource): GameState {
+  requireResource(resource);
   let next = takeDevCard(state, 'monopoly');
   next = markDevPlayed(next);
   const player = next.currentPlayer;
@@ -610,6 +633,7 @@ function playMonopoly(state: GameState, resource: Resource): GameState {
 
 function playYearOfPlenty(state: GameState, resources: Resource[]): GameState {
   if (resources.length !== 2) fail('Year of Plenty takes exactly two resources');
+  resources.forEach(requireResource);
   let next = takeDevCard(state, 'yearOfPlenty');
   next = markDevPlayed(next);
   const bank = { ...next.bank };
@@ -632,6 +656,9 @@ function playYearOfPlenty(state: GameState, resources: Resource[]): GameState {
 
 function bankTrade(state: GameState, give: Resource, receive: Resource): GameState {
   requireMain(state);
+  requireResource(give);
+  requireResource(receive);
+  if (give === receive) fail('Cannot trade a resource for the same resource');
   const player = state.currentPlayer;
   const ratio = bankTradeRatio(state, player, give);
   if (state.players[player].resources[give] < ratio) fail(`Need ${ratio} ${give} to trade`);
@@ -654,7 +681,9 @@ function playerTrade(
   if (!state.rules.allowPlayerTrades) fail('Player trading is disabled');
   requireMain(state);
   const player = state.currentPlayer;
+  requirePlayer(state, partner);
   if (partner === player) fail('Cannot trade with yourself');
+  validateTradeBundles(give, receive);
   if (!canAfford(state.players[player].resources, give)) fail('You lack the offered resources');
   if (!canAfford(state.players[partner].resources, receive)) fail('Partner lacks the requested resources');
 
@@ -679,13 +708,14 @@ function createTradeOffer(
   if (!state.rules.allowPlayerTrades) fail('Player trading is disabled');
   requireMain(state);
   const proposer = state.currentPlayer;
+  validateTradeBundles(give, receive, true);
+  if (!Number.isInteger(anyCount) || anyCount < 0) fail('Wildcard count must be a non-negative whole number');
+  if (resourceBundleTotal(receive) + anyCount <= 0) fail('Trade must include cards on both sides');
   if (!canAfford(state.players[proposer].resources, give)) fail('You lack the offered resources');
-  const offered = RESOURCES.reduce((sum, resource) => sum + (give[resource] ?? 0), 0);
-  const requested = RESOURCES.reduce((sum, resource) => sum + (receive[resource] ?? 0), 0);
-  if (offered <= 0 || requested + anyCount <= 0 || !Number.isInteger(anyCount) || anyCount < 0) fail('Trade offer must include cards on both sides');
 
   const responses: Record<number, TradeOfferResponse> = {};
   if (target !== null) {
+    requirePlayer(state, target);
     if (!state.players[proposer].isBot || state.players[target]?.isBot !== false || target === proposer) fail('Bot offers must target a human opponent');
     if (state.pending.botTradeOfferedThisTurn) fail('Bot already offered a trade this turn');
     if (anyCount > 0) fail('Bot offers cannot request wildcard resources');
@@ -698,7 +728,7 @@ function createTradeOffer(
     for (const player of state.players) {
       if (player.id === proposer) continue;
       const wildcardResource = anyCount > 0
-        ? RESOURCES.find((resource) => botAcceptsTrade(state, player.id, give, { ...receive, [resource]: (receive[resource] ?? 0) + anyCount })) ?? null
+        ? RESOURCES.find((resource) => (give[resource] ?? 0) === 0 && botAcceptsTrade(state, player.id, give, { ...receive, [resource]: (receive[resource] ?? 0) + anyCount })) ?? null
         : null;
       responses[player.id] = {
         status: (anyCount > 0 ? wildcardResource !== null : botAcceptsTrade(state, player.id, give, receive)) ? 'accepted' : 'declined',
@@ -712,9 +742,26 @@ function createTradeOffer(
 }
 
 function respondTradeOffer(state: GameState, offerId: number, responder: number, accepted: boolean, wildcardResource: Resource | null): GameState {
+  if (!Number.isInteger(offerId)) fail('Unknown trade offer');
+  requirePlayer(state, responder);
+  if (typeof accepted !== 'boolean') fail('Trade response must accept or decline');
   const offer = state.tradeOffers.find((item) => item.id === offerId);
   if (!offer || offer.target !== responder || offer.responses[responder]?.status !== 'pending') fail('Trade response is no longer pending');
   if (state.players[responder].isBot) fail('Only the targeted human can respond');
+  validateTradeBundles(offer.give, offer.receive, true);
+  if (accepted) {
+    const requested = { ...offer.receive };
+    if (offer.anyCount > 0) {
+      requireResource(wildcardResource);
+      if ((offer.give[wildcardResource] ?? 0) > 0) fail('Cannot trade a resource for the same resource');
+      requested[wildcardResource] = (requested[wildcardResource] ?? 0) + offer.anyCount;
+    } else if (wildcardResource !== null) {
+      fail('This offer does not request a wildcard resource');
+    }
+    if (!canAfford(state.players[responder].resources, requested)) fail('You lack the requested resources');
+  } else if (wildcardResource !== null) {
+    fail('A declined offer cannot select a wildcard resource');
+  }
   const status = accepted ? 'accepted' as const : 'declined' as const;
   const responses = { ...offer.responses, [responder]: { status, wildcardResource: accepted ? wildcardResource : null } };
   const next = { ...state, tradeOffers: state.tradeOffers.map((item) => item.id === offerId ? { ...item, responses } : item) };
@@ -723,13 +770,21 @@ function respondTradeOffer(state: GameState, offerId: number, responder: number,
 
 function completeTradeOffer(state: GameState, offerId: number, partner: number): GameState {
   requireMain(state);
+  if (!Number.isInteger(offerId)) fail('Unknown trade offer');
+  requirePlayer(state, partner);
   const offer = state.tradeOffers.find((item) => item.id === offerId);
   if (!offer) fail('Trade offer no longer exists');
   if (offer.proposer !== state.currentPlayer) fail('Only the current proposer can choose a trade partner');
   const response = offer.responses[partner];
   if (response?.status !== 'accepted') fail('That player did not accept this offer');
+  validateTradeBundles(offer.give, offer.receive, true);
   const receive = { ...offer.receive };
-  if (offer.anyCount > 0 && response.wildcardResource) receive[response.wildcardResource] = (receive[response.wildcardResource] ?? 0) + offer.anyCount;
+  if (offer.anyCount > 0) {
+    requireResource(response.wildcardResource);
+    if ((offer.give[response.wildcardResource] ?? 0) > 0) fail('Cannot trade a resource for the same resource');
+    receive[response.wildcardResource] = (receive[response.wildcardResource] ?? 0) + offer.anyCount;
+  }
+  validateTradeBundles(offer.give, receive);
   if (!canAfford(state.players[offer.proposer].resources, offer.give)) fail('You no longer have the offered resources');
   if (!canAfford(state.players[partner].resources, receive)) fail('That player no longer has the requested resources');
 
@@ -745,6 +800,7 @@ function formatResources(resources: Partial<Record<Resource, number>>): string {
 
 function cancelTradeOffer(state: GameState, offerId: number): GameState {
   requireMain(state);
+  if (!Number.isInteger(offerId)) fail('Unknown trade offer');
   const offer = state.tradeOffers.find((item) => item.id === offerId);
   if (!offer) fail('Trade offer no longer exists');
   if (offer.proposer !== state.currentPlayer) fail('Only the current proposer can cancel this offer');
@@ -765,27 +821,33 @@ function updateLargestArmy(state: GameState): GameState {
   return state;
 }
 
+/**
+ * Checks every player, not just the one who acted: Longest Road can flip to a
+ * third party when someone else's settlement severs their road, and that
+ * transfer alone can push the new holder over the threshold. The real game
+ * ends the instant any player reaches the target, regardless of whose turn
+ * caused it, so scan everyone rather than trust the actor to be the only
+ * candidate. Scanning `state.players` in a fixed index order keeps this
+ * deterministic for the seeded-RNG replay guarantee.
+ */
 function checkWin(state: GameState): GameState {
-  const player = state.currentPlayer;
-  if (victoryPoints(state, player) >= state.rules.victoryPoints) {
-    return log({ ...state, phase: 'gameOver', winner: player }, `${playerName(state, player)} wins!`);
-  }
-  return state;
+  const winner = state.players.find((p) => victoryPoints(state, p.id) >= state.rules.victoryPoints);
+  if (!winner) return state;
+  return log({ ...state, phase: 'gameOver', winner: winner.id }, `${playerName(state, winner.id)} wins!`);
 }
 
 /** Developer-only helpers, intentionally routed through the pure reducer. */
 function debugAddResources(state: GameState, player: number, resources: Partial<Record<Resource, number>>): GameState {
-  if (!state.players[player]) fail('Unknown player');
-  const added = RESOURCES.reduce((sum, resource) => sum + (resources[resource] ?? 0), 0);
-  if (!Number.isInteger(added) || added <= 0 || RESOURCES.some((resource) => (resources[resource] ?? 0) < 0)) {
-    fail('Debug resources must be positive whole cards');
-  }
+  requirePlayer(state, player);
+  validateResourceBundle(resources, 'Debug resources');
+  const added = resourceBundleTotal(resources);
+  if (added <= 0) fail('Debug resources must be positive whole cards');
   const next = withPlayer(state, player, (p) => ({ ...p, resources: addResources(p.resources, resources) }));
   return log(next, `Debug: gave ${added} resource card${added === 1 ? '' : 's'} to ${playerName(next, player)}`, player);
 }
 
 function debugGrantDevCard(state: GameState, player: number, card: DevCardType): GameState {
-  if (!state.players[player]) fail('Unknown player');
+  requirePlayer(state, player);
   const next = withPlayer(state, player, (p) => ({
     ...p,
     devCards: [...p.devCards, { type: card, boughtOnTurn: state.turn - 1, played: false }],
@@ -805,7 +867,7 @@ function endTurn(state: GameState): GameState {
   }
   const currentIndex = state.turnOrder.indexOf(state.currentPlayer);
   const nextPlayer = state.turnOrder[(currentIndex + 1) % state.turnOrder.length];
-  return {
+  const next: GameState = {
     ...state,
     currentPlayer: nextPlayer,
     phase: 'roll',
@@ -815,4 +877,5 @@ function endTurn(state: GameState): GameState {
     tradeOffers: [],
     log: [...state.log, { turn: state.turn + 1, player: nextPlayer, message: `${playerName(state, nextPlayer)}'s turn` }],
   };
+  return checkWin(next);
 }

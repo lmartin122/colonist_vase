@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { cityAsset, roadAsset, settlementAsset } from '../assets';
-import { PLAYER_COLORS } from '../engine/constants';
+import { MAX_VICTORY_POINTS, PLAYER_COLORS } from '../engine/constants';
 import { DEFAULT_RULES } from '../engine/game';
 import type { BotDifficulty, GameRules, PlayerColor } from '../engine/types';
 import { useGame } from '../state/store';
@@ -90,14 +90,14 @@ export function StartScreen() {
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <RangeSetting label="Points to win" value={rules.victoryPoints} min={3} max={20} onChange={(victoryPoints) => setRules({ ...rules, victoryPoints })} />
+              <RangeSetting label="Points to win" value={rules.victoryPoints} min={3} max={MAX_VICTORY_POINTS} onChange={(victoryPoints) => setRules({ ...rules, victoryPoints })} />
               <RangeSetting label="Discard limit" value={rules.discardLimit} min={5} max={20} onChange={(discardLimit) => setRules({ ...rules, discardLimit })} />
             </div>
 
             <Label>Rules</Label>
             <div className="grid gap-2 sm:grid-cols-3">
               <RuleToggle label="Hide Bank Cards" description="Hide remaining card counts." checked={rules.hideBankCards} onChange={(hideBankCards) => setRules({ ...rules, hideBankCards })} />
-              <RuleToggle label="Friendly Robber" description="Players below 3 VP cannot be robbed." checked={rules.friendlyRobber} onChange={(friendlyRobber) => setRules({ ...rules, friendlyRobber })} />
+              <RuleToggle label="Friendly Robber" description="Players below 3 visible VP cannot be blocked or robbed." checked={rules.friendlyRobber} onChange={(friendlyRobber) => setRules({ ...rules, friendlyRobber })} />
               <RuleToggle label="Player Trading" description="Allow direct trades with opponents." checked={rules.allowPlayerTrades} onChange={(allowPlayerTrades) => setRules({ ...rules, allowPlayerTrades })} />
             </div>
 

@@ -7,6 +7,8 @@ import type { DevCardType, GameState, Resource } from '../src/engine/types';
 import { legalRoadEdges, robberTargetTiles, stealableOpponents } from '../src/engine/placement';
 import { nextBotAction } from '../src/ai/bot';
 import { deriveFlights } from '../src/state/flights';
+import type { Action } from '../src/engine/actions';
+import { MAX_VICTORY_POINTS } from '../src/engine/constants';
 
 function game(seed = 1): GameState {
   return createGame({
@@ -97,7 +99,7 @@ describe('trade offers', () => {
     s = applyOrThrow(s, {
       type: 'createTradeOffer',
       give: { ore: 1 },
-      receive: { ore: 1 },
+      receive: { brick: 1 },
       anyCount: 0,
     });
     expect(reduce(s, { type: 'endTurn' }).ok).toBe(true);
@@ -194,6 +196,59 @@ describe('game rules', () => {
     s = { ...s, phase: 'main', rules: { ...s.rules, allowPlayerTrades: false } };
     expect(reduce(s, { type: 'playerTrade', partner, give: { wood: 1 }, receive: { brick: 1 } }).ok).toBe(false);
   });
+
+  it('accepts the maximum achievable victory target and rejects higher targets', () => {
+    expect(createGame({ players: [{ name: 'A', isBot: false }, { name: 'B', isBot: true }], rules: { victoryPoints: MAX_VICTORY_POINTS } }).rules.victoryPoints).toBe(22);
+    expect(() => createGame({ players: [{ name: 'A', isBot: false }, { name: 'B', isBot: true }], rules: { victoryPoints: 23 } })).toThrow(/3 to 22/);
+    expect(() => createGame({ players: [{ name: 'A', isBot: false }, { name: 'B', isBot: true }], rules: { victoryPoints: 24 } })).toThrow(/3 to 22/);
+  });
+});
+
+describe('resource action validation', () => {
+  it('rejects malformed discards and trades without mutating the input state', () => {
+    let s = autoSetup(game(40));
+    s = { ...setRes(s, 0, { wood: 8, brick: 2 }), currentPlayer: 0, phase: 'main' };
+    const before = structuredClone(s);
+    const invalid: Action[] = [
+      { type: 'bankTrade', give: 'wood', receive: 'wood' },
+      { type: 'playerTrade', partner: 1, give: {}, receive: { brick: 1 } },
+      { type: 'playerTrade', partner: 1, give: { wood: 1 }, receive: { wood: 1 } },
+      { type: 'playerTrade', partner: 99, give: { wood: 1 }, receive: { brick: 1 } },
+      { type: 'createTradeOffer', give: { wood: -1 }, receive: { ore: 1 }, anyCount: 0 },
+      { type: 'createTradeOffer', give: { wood: 0.5 }, receive: { ore: 1 }, anyCount: 0 },
+      { type: 'createTradeOffer', give: { gold: 1 } as never, receive: { ore: 1 }, anyCount: 0 },
+    ];
+    invalid.forEach((action) => expect(reduce(s, action).ok, action.type).toBe(false));
+    expect(s).toEqual(before);
+
+    const discardState = { ...s, phase: 'discard' as const, pending: { ...s.pending, discards: { 0: 4 } } };
+    expect(reduce(discardState, { type: 'discard', player: 0, resources: { wood: 5, brick: -1 } }).ok).toBe(false);
+  });
+
+  it('completes a valid wildcard offer and conserves both hands', () => {
+    let s = autoSetup(game(41));
+    s = { ...s, currentPlayer: 0, phase: 'main' };
+    s = setRes(s, 0, { ore: 1 });
+    s = setRes(s, 1, { sheep: 1 });
+    s = applyOrThrow(s, { type: 'createTradeOffer', give: { ore: 1 }, receive: {}, anyCount: 1 });
+    const offerId = s.tradeOffers[0].id;
+    expect(s.tradeOffers[0].responses[1]).toMatchObject({ status: 'accepted', wildcardResource: 'sheep' });
+    s = applyOrThrow(s, { type: 'completeTradeOffer', offerId, partner: 1 });
+    expect(s.players[0].resources).toMatchObject({ ore: 0, sheep: 1 });
+    expect(s.players[1].resources).toMatchObject({ ore: 1, sheep: 0 });
+  });
+
+  it('completes a valid direct trade without creating or losing cards', () => {
+    let s = autoSetup(game(46));
+    s = { ...s, currentPlayer: 0, phase: 'main' };
+    s = setRes(s, 0, { wood: 1 });
+    s = setRes(s, 1, { brick: 1 });
+    const before = totalResources(s.players[0].resources) + totalResources(s.players[1].resources);
+    s = applyOrThrow(s, { type: 'playerTrade', partner: 1, give: { wood: 1 }, receive: { brick: 1 } });
+    expect(s.players[0].resources).toMatchObject({ wood: 0, brick: 1 });
+    expect(s.players[1].resources).toMatchObject({ wood: 1, brick: 0 });
+    expect(totalResources(s.players[0].resources) + totalResources(s.players[1].resources)).toBe(before);
+  });
 });
 
 describe('monopoly', () => {
@@ -239,8 +294,26 @@ describe('robber', () => {
     const victimVertex = Number(Object.keys(s.buildings).find((v) => s.buildings[Number(v)].owner === victim));
     const tile = s.board.vertices[victimVertex].tileIds.find((t) => t !== s.board.robberTileId)!;
     s = { ...s, phase: 'moveRobber', currentPlayer: 0, rules: { ...s.rules, friendlyRobber: true } };
+    expect(robberTargetTiles(s)).not.toContain(tile);
     expect(reduce(s, { type: 'moveRobber', tile, stealFrom: victim }).ok).toBe(false);
-    expect(reduce(s, { type: 'moveRobber', tile, stealFrom: null }).ok).toBe(true);
+    expect(reduce(s, { type: 'moveRobber', tile, stealFrom: null }).ok).toBe(false);
+    expect(reduce(s, { type: 'moveRobber', tile: robberTargetTiles(s)[0], stealFrom: null }).ok).toBe(true);
+  });
+
+  it('uses visible points and falls back to leaving the robber on the desert', () => {
+    let s = autoSetup(game(42));
+    const victim = 1;
+    const players = s.players.map((player) => player.id === victim
+      ? { ...player, devCards: [...player.devCards, { type: 'victoryPoint' as const, boughtOnTurn: 0, played: false }] }
+      : player);
+    const victimVertex = Number(Object.keys(s.buildings).find((vertex) => s.buildings[Number(vertex)].owner === victim));
+    const desert = { ...s.board.tiles[s.board.robberTileId], id: 0, type: 'desert' as const, vertexIds: [] };
+    const protectedTile = { ...s.board.tiles.find((tile) => tile.type !== 'desert')!, id: 1, vertexIds: [victimVertex] };
+    const board = { ...s.board, tiles: [desert, protectedTile], robberTileId: 0 };
+    s = { ...s, players, board, phase: 'moveRobber', currentPlayer: 0, rules: { ...s.rules, friendlyRobber: true } };
+    expect(victoryPoints(s, victim)).toBeGreaterThanOrEqual(3);
+    expect(robberTargetTiles(s)).toEqual([0]);
+    expect(reduce(s, { type: 'moveRobber', tile: 0, stealFrom: null }).ok).toBe(true);
   });
 });
 
@@ -313,6 +386,35 @@ describe('progress cards', () => {
     expect(s.pending.freeRoads).toBe(1);
   });
 
+  it('clears unusable free roads before rolling instead of deadlocking', () => {
+    let s = autoSetup(game(43));
+    s = withDevCard(s, 0, 'roadBuilding');
+    s = { ...s, currentPlayer: 0, phase: 'roll', turn: s.turn + 1 };
+    const initiallyLegal = legalRoadEdges(s, 0);
+    const onlyEdge = initiallyLegal[0];
+    const roads = { ...s.roads };
+    const [a, b] = s.board.edges[onlyEdge].vertexIds;
+    const blocked = new Set([...initiallyLegal, ...s.board.vertices[a].edgeIds, ...s.board.vertices[b].edgeIds]);
+    for (const edge of blocked) if (roads[edge] === undefined && edge !== onlyEdge) roads[edge] = edge % 2 ? 1 : 2;
+    s = { ...s, roads };
+    s = applyOrThrow(s, { type: 'playRoadBuilding' });
+    expect(s.pending.freeRoads).toBe(2);
+    s = applyOrThrow(s, { type: 'buildRoad', edge: onlyEdge });
+    expect(s.pending.freeRoads).toBe(0);
+    expect(reduce(s, { type: 'rollDice' }).ok).toBe(true);
+  });
+
+  it('does not create a free-road obligation when no road can be placed', () => {
+    let s = autoSetup(game(45));
+    s = withDevCard(s, 0, 'roadBuilding');
+    s = { ...s, currentPlayer: 0, phase: 'roll', turn: s.turn + 1 };
+    const roads = { ...s.roads };
+    for (const edge of legalRoadEdges(s, 0)) roads[edge] = edge % 2 ? 1 : 2;
+    s = applyOrThrow({ ...s, roads }, { type: 'playRoadBuilding' });
+    expect(s.pending.freeRoads).toBe(0);
+    expect(reduce(s, { type: 'rollDice' }).ok).toBe(true);
+  });
+
   it('plays Knight by selecting a legal robber hex and victim', () => {
     let s = autoSetup(game(13));
     s = setRes(s, 1, { sheep: 1 });
@@ -373,6 +475,49 @@ describe('longest road', () => {
       frontier = a === frontier ? b : a;
     }
     expect(longestRoadLength(s2, 0)).toBeGreaterThan(longestRoadLength(s, 0));
+  });
+
+  it('ends the game for a third player who gains Longest Road from another player\'s move', () => {
+    const base = game(50);
+    // Build a real 5-road chain for player 2, starting from an untouched vertex.
+    const touched = new Set<number>();
+    let frontier = 0;
+    const roads: GameState['roads'] = {};
+    for (let i = 0; i < 5; i++) {
+      touched.add(frontier);
+      const edge = base.board.vertices[frontier].edgeIds.find((e) => roads[e] === undefined)!;
+      roads[edge] = 2;
+      const [a, b] = base.board.edges[edge].vertexIds;
+      frontier = a === frontier ? b : a;
+    }
+    touched.add(frontier);
+
+    // Player 0 (the actor) gets an unrelated settlement to legally build one more road.
+    const actorVertex = base.board.vertices.find((v) => !touched.has(v.id))!.id;
+    const players = base.players.map((p) => p.id === 2
+      ? { ...p, devCards: Array.from({ length: 8 }, () => ({ type: 'victoryPoint' as const, boughtOnTurn: 0, played: false })) }
+      : p);
+
+    let s: GameState = {
+      ...base,
+      players,
+      roads,
+      buildings: { [actorVertex]: { type: 'settlement', owner: 0 } },
+      phase: 'main',
+      currentPlayer: 0,
+      // Stale incumbent with no real roads left, standing in for a road just severed elsewhere.
+      longestRoad: { player: 1, length: 5 },
+    };
+    s = setRes(s, 0, { wood: 5, brick: 5 });
+
+    expect(victoryPoints(s, 2)).toBe(8);
+    expect(longestRoadLength(s, 2)).toBeGreaterThanOrEqual(5);
+
+    const result = applyOrThrow(s, { type: 'buildRoad', edge: legalRoadEdges(s, 0)[0] });
+
+    expect(result.longestRoad.player).toBe(2);
+    expect(result.phase).toBe('gameOver');
+    expect(result.winner).toBe(2);
   });
 });
 

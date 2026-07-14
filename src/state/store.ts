@@ -174,7 +174,14 @@ export const useGame = create<Store>((set, get) => {
     matchEndedAt: null,
 
     newGame(config) {
-      set({ game: createGame(config), build: null, error: null, humanId: 0, debugInfiniteTimer: null, matchStartedAt: Date.now(), matchEndedAt: null });
+      let game: GameState;
+      try {
+        game = createGame(config);
+      } catch (err) {
+        set({ error: err instanceof Error ? err.message : 'Could not start the game' });
+        return;
+      }
+      set({ game, build: null, error: null, humanId: 0, debugInfiniteTimer: null, matchStartedAt: Date.now(), matchEndedAt: null });
       playSound('gameStarted');
       void runBots();
     },

@@ -1,5 +1,5 @@
 import type { GameState } from './types';
-import { victoryPoints } from './helpers';
+import { publicVictoryPoints } from './helpers';
 
 /**
  * Placement legality predicates, shared by the reducer (to validate actions) and
@@ -62,9 +62,22 @@ export function legalCityVertices(state: GameState, playerId: number): number[] 
     .map(([v]) => Number(v));
 }
 
-/** Tiles the robber may move to (any tile except its current one). */
+/** Legal robber destinations, including Friendly Robber protection. */
 export function robberTargetTiles(state: GameState): number[] {
-  return state.board.tiles.filter((t) => t.id !== state.board.robberTileId).map((t) => t.id);
+  const candidates = state.board.tiles.filter((tile) => tile.id !== state.board.robberTileId);
+  if (!state.rules.friendlyRobber) return candidates.map((tile) => tile.id);
+
+  const actor = state.currentPlayer;
+  const allowed = candidates.filter((tile) => tile.vertexIds.every((vertex) => {
+    const building = state.buildings[vertex];
+    return !building || building.owner === actor || publicVictoryPoints(state, building.owner) >= 3;
+  }));
+  if (allowed.length > 0) return allowed.map((tile) => tile.id);
+
+  // The official friendly variant leaves the robber on the desert when every
+  // other destination would block a protected opponent.
+  const desert = state.board.tiles.find((tile) => tile.type === 'desert');
+  return desert ? [desert.id] : [];
 }
 
 /** Opponents with a building on a tile who still hold resources (stealable). */
@@ -72,7 +85,7 @@ export function stealableOpponents(state: GameState, tile: number, actor: number
   const victims = new Set<number>();
   for (const vid of state.board.tiles[tile].vertexIds) {
     const b = state.buildings[vid];
-    if (b && b.owner !== actor && (!state.rules.friendlyRobber || victoryPoints(state, b.owner) >= 3)) {
+    if (b && b.owner !== actor && (!state.rules.friendlyRobber || publicVictoryPoints(state, b.owner) >= 3)) {
       const total = Object.values(state.players[b.owner].resources).reduce((s, n) => s + n, 0);
       if (total > 0) victims.add(b.owner);
     }
