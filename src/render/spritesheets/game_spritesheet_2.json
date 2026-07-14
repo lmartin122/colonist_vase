@@ -1,0 +1,1286 @@
+{
+  "meta": {
+    "app": "https://github.com/houmain/spright",
+    "format": "RGBA8888",
+    "image": "game_spritesheet_2.5db443c190f0be955724.webp",
+    "size": {
+      "w": 2457,
+      "h": 2457
+    },
+    "scale": 1.2000000476837158
+  },
+  "frames": {
+    "bg_section": {
+      "rotated": false,
+      "trimmed": false,
+      "sourceSize": {
+        "w": 970,
+        "h": 466
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 970,
+        "h": 466
+      },
+      "frame": {
+        "x": 254,
+        "y": 1450,
+        "w": 970,
+        "h": 466
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "bg_section_dark": {
+      "rotated": false,
+      "trimmed": false,
+      "sourceSize": {
+        "w": 970,
+        "h": 466
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 970,
+        "h": 466
+      },
+      "frame": {
+        "x": 1226,
+        "y": 1450,
+        "w": 970,
+        "h": 466
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_cloth": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 342,
+        "h": 480
+      },
+      "frame": {
+        "x": 1730,
+        "y": 967,
+        "w": 342,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_coin": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 342,
+        "h": 480
+      },
+      "frame": {
+        "x": 2075,
+        "y": 967,
+        "w": 342,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_politics_intrigue": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 1730,
+        "y": 485,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_politics_saboteur": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 2076,
+        "y": 485,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_politics_spy": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 2,
+        "y": 967,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_politics_warlord": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 348,
+        "y": 967,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_politics_wedding": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 694,
+        "y": 967,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_science_alchemist": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 1039,
+        "y": 967,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_science_back": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 1385,
+        "y": 967,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_science_crane": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_science_engineer": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 1385,
+        "y": 485,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_science_inventor": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 1039,
+        "y": 485,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_science_irrigation": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 694,
+        "y": 485,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_science_medicine": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 348,
+        "y": 485,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_science_mining": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 2,
+        "y": 485,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_science_printer": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 2076,
+        "y": 2,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_science_road_building": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 1730,
+        "y": 2,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_science_smith": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 1385,
+        "y": 2,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_trade_back": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 1039,
+        "y": 2,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_trade_commercial_harbor": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 694,
+        "y": 2,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_trade_merchant_fleet": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 348,
+        "y": 2,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "icon_beginner_hint_initial_placement": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 154,
+        "h": 154
+      },
+      "spriteSourceSize": {
+        "x": 5,
+        "y": 5,
+        "w": 149,
+        "h": 146
+      },
+      "frame": {
+        "x": 720,
+        "y": 2306,
+        "w": 149,
+        "h": 146
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "icon_colonist": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 480,
+        "h": 480
+      },
+      "spriteSourceSize": {
+        "x": 14,
+        "y": 55,
+        "w": 451,
+        "h": 370
+      },
+      "frame": {
+        "x": 1540,
+        "y": 1918,
+        "w": 451,
+        "h": 370
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "icon_discard_resource_cards": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 138,
+        "h": 236
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 138,
+        "h": 235
+      },
+      "frame": {
+        "x": 2312,
+        "y": 1836,
+        "w": 138,
+        "h": 235
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "icon_founder": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 480,
+        "h": 480
+      },
+      "spriteSourceSize": {
+        "x": 42,
+        "y": 53,
+        "w": 398,
+        "h": 386
+      },
+      "frame": {
+        "x": 1139,
+        "y": 1918,
+        "w": 398,
+        "h": 386
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "icon_highlight_square_yellow": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 168,
+        "h": 168
+      },
+      "spriteSourceSize": {
+        "x": 4,
+        "y": 4,
+        "w": 162,
+        "h": 161
+      },
+      "frame": {
+        "x": 1712,
+        "y": 2290,
+        "w": 162,
+        "h": 161
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "icon_merchant_green": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 134,
+        "h": 134
+      },
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 0,
+        "w": 118,
+        "h": 134
+      },
+      "frame": {
+        "x": 2312,
+        "y": 2309,
+        "w": 118,
+        "h": 134
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "icon_merchant_white": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 134,
+        "h": 134
+      },
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 0,
+        "w": 118,
+        "h": 134
+      },
+      "frame": {
+        "x": 1354,
+        "y": 2306,
+        "w": 118,
+        "h": 134
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "icon_pass_turn": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 170,
+        "h": 170
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 4,
+        "w": 170,
+        "h": 163
+      },
+      "frame": {
+        "x": 1540,
+        "y": 2290,
+        "w": 170,
+        "h": 163
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "icon_player_loggedin": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 77,
+        "h": 77
+      },
+      "spriteSourceSize": {
+        "x": 16,
+        "y": 2,
+        "w": 46,
+        "h": 70
+      },
+      "frame": {
+        "x": 1474,
+        "y": 2381,
+        "w": 46,
+        "h": 70
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "icon_robber_santa": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 77,
+        "h": 77
+      },
+      "spriteSourceSize": {
+        "x": 20,
+        "y": 2,
+        "w": 36,
+        "h": 72
+      },
+      "frame": {
+        "x": 1474,
+        "y": 2306,
+        "w": 36,
+        "h": 72
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "icon_settler": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 480,
+        "h": 480
+      },
+      "spriteSourceSize": {
+        "x": 10,
+        "y": 30,
+        "w": 463,
+        "h": 412
+      },
+      "frame": {
+        "x": 254,
+        "y": 1918,
+        "w": 463,
+        "h": 412
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "knight_level1_active_blue": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 240,
+        "h": 240
+      },
+      "spriteSourceSize": {
+        "x": 1,
+        "y": 1,
+        "w": 238,
+        "h": 238
+      },
+      "frame": {
+        "x": 2,
+        "y": 2172,
+        "w": 238,
+        "h": 238
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "knight_level2_inactive_silver": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 240,
+        "h": 240
+      },
+      "spriteSourceSize": {
+        "x": 1,
+        "y": 1,
+        "w": 238,
+        "h": 238
+      },
+      "frame": {
+        "x": 2,
+        "y": 1932,
+        "w": 238,
+        "h": 238
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "knight_move_red": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 317,
+        "h": 317
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 40,
+        "w": 317,
+        "h": 238
+      },
+      "frame": {
+        "x": 1993,
+        "y": 2158,
+        "w": 317,
+        "h": 238
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "knight_move_silver": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 317,
+        "h": 317
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 40,
+        "w": 317,
+        "h": 238
+      },
+      "frame": {
+        "x": 1993,
+        "y": 1918,
+        "w": 317,
+        "h": 238
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "metropolis_politics": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 155,
+        "h": 155
+      },
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 11,
+        "w": 86,
+        "h": 138
+      },
+      "frame": {
+        "x": 871,
+        "y": 2306,
+        "w": 86,
+        "h": 138
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "metropolis_science": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 155,
+        "h": 155
+      },
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 11,
+        "w": 86,
+        "h": 139
+      },
+      "frame": {
+        "x": 1877,
+        "y": 2290,
+        "w": 86,
+        "h": 139
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "metropolis_trade": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 155,
+        "h": 155
+      },
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 11,
+        "w": 86,
+        "h": 138
+      },
+      "frame": {
+        "x": 960,
+        "y": 2306,
+        "w": 86,
+        "h": 138
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "port_highlight": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 68,
+        "h": 95
+      },
+      "spriteSourceSize": {
+        "x": 1,
+        "y": 0,
+        "w": 67,
+        "h": 95
+      },
+      "frame": {
+        "x": 644,
+        "y": 2332,
+        "w": 67,
+        "h": 95
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "road_blue": {
+      "rotated": false,
+      "trimmed": false,
+      "sourceSize": {
+        "w": 48,
+        "h": 233
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 48,
+        "h": 233
+      },
+      "frame": {
+        "x": 2312,
+        "y": 2074,
+        "w": 48,
+        "h": 233
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "road_pink": {
+      "rotated": false,
+      "trimmed": false,
+      "sourceSize": {
+        "w": 48,
+        "h": 233
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 48,
+        "h": 233
+      },
+      "frame": {
+        "x": 2363,
+        "y": 2074,
+        "w": 48,
+        "h": 233
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "ship_bronze_west": {
+      "rotated": false,
+      "trimmed": false,
+      "sourceSize": {
+        "w": 78,
+        "h": 124
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 78,
+        "h": 124
+      },
+      "frame": {
+        "x": 564,
+        "y": 2332,
+        "w": 78,
+        "h": 124
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "ship_gold_west": {
+      "rotated": false,
+      "trimmed": false,
+      "sourceSize": {
+        "w": 78,
+        "h": 124
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 78,
+        "h": 124
+      },
+      "frame": {
+        "x": 323,
+        "y": 2332,
+        "w": 78,
+        "h": 124
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "ship_green_west": {
+      "rotated": false,
+      "trimmed": false,
+      "sourceSize": {
+        "w": 78,
+        "h": 124
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 78,
+        "h": 124
+      },
+      "frame": {
+        "x": 484,
+        "y": 2332,
+        "w": 78,
+        "h": 124
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "ship_silver_west": {
+      "rotated": false,
+      "trimmed": false,
+      "sourceSize": {
+        "w": 78,
+        "h": 124
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 78,
+        "h": 124
+      },
+      "frame": {
+        "x": 403,
+        "y": 2332,
+        "w": 78,
+        "h": 124
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "ship_white_west": {
+      "rotated": false,
+      "trimmed": false,
+      "sourceSize": {
+        "w": 78,
+        "h": 124
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 78,
+        "h": 124
+      },
+      "frame": {
+        "x": 242,
+        "y": 2332,
+        "w": 78,
+        "h": 124
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "tile_desert_side": {
+      "rotated": false,
+      "trimmed": false,
+      "sourceSize": {
+        "w": 302,
+        "h": 136
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 302,
+        "h": 136
+      },
+      "frame": {
+        "x": 1049,
+        "y": 2306,
+        "w": 302,
+        "h": 136
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "tile_shore_2_sswwww": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 416,
+        "h": 480
+      },
+      "spriteSourceSize": {
+        "x": 167,
+        "y": 0,
+        "w": 250,
+        "h": 384
+      },
+      "frame": {
+        "x": 2198,
+        "y": 1450,
+        "w": 250,
+        "h": 384
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "tile_shore_3_ssswww": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 418,
+        "h": 480
+      },
+      "spriteSourceSize": {
+        "x": 168,
+        "y": 0,
+        "w": 250,
+        "h": 480
+      },
+      "frame": {
+        "x": 2,
+        "y": 1450,
+        "w": 250,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "tile_shore_3_sswwsw": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 416,
+        "h": 481
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 1,
+        "w": 416,
+        "h": 386
+      },
+      "frame": {
+        "x": 720,
+        "y": 1918,
+        "w": 416,
+        "h": 386
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    }
+  }
+}

@@ -59,6 +59,12 @@ export const PLAYER_CSS: Record<PlayerColor, string> = {
 export const OCEAN = 0x2e6e96;
 export const OCEAN_DEEP = 0x1d4d6b;
 export const OCEAN_WAVE = 0x579fb0;
+
+/** Shoreline tones (sampled from the beach art): dry sand by the land, wet sand
+ * toward the sea, and a pale foam rim where the sand meets the ocean. */
+export const SAND_DRY = 0xf0e4be;
+export const SAND_WET = 0xddb067;
+export const SAND_FOAM = 0xc3dee1;
 export const TILE_STROKE = 0x1f2d24;
 export const ROBBER_COLOR = 0x2b2a28;
 export const TOKEN_BG = 0xfbf7ef;

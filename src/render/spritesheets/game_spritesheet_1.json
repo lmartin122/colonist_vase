@@ -1,0 +1,758 @@
+{
+  "meta": {
+    "app": "https://github.com/houmain/spright",
+    "format": "RGBA8888",
+    "image": "game_spritesheet_1.00ac67ed30ba9f71167e.webp",
+    "size": {
+      "w": 2457,
+      "h": 2457
+    },
+    "scale": 1.2000000476837158
+  },
+  "frames": {
+    "card_devcardback": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 487
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 1039,
+        "y": 1450,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_knight": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 487
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 1385,
+        "y": 1450,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_monopoly": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 487
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 1730,
+        "y": 1450,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_ore": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 487
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 481
+      },
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 343,
+        "h": 481
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_overlay_black": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 487
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 344,
+        "h": 480
+      },
+      "frame": {
+        "x": 1948,
+        "y": 967,
+        "w": 344,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_overlay_blue": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 487
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 344,
+        "h": 480
+      },
+      "frame": {
+        "x": 1601,
+        "y": 967,
+        "w": 344,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_overlay_white": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 487
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 344,
+        "h": 480
+      },
+      "frame": {
+        "x": 1254,
+        "y": 967,
+        "w": 344,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_paper": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 1039,
+        "y": 1932,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_politics_back": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 1385,
+        "y": 1932,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_politics_bishop": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 1730,
+        "y": 1932,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_politics_constitution": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 2076,
+        "y": 1932,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_politics_deserter": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 2,
+        "y": 1933,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_politics_diplomat": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 348,
+        "y": 1933,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_trade_commodity_monopoly": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 348,
+        "y": 968,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_trade_master_merchant": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 694,
+        "y": 1932,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_trade_merchant": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 694,
+        "y": 1450,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_progress_trade_resource_monopoly": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 488
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 2,
+        "y": 968,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_roadbuilding": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 487
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 2076,
+        "y": 1450,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_vp": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 487
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 2,
+        "y": 1451,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_wool": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 487
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 481
+      },
+      "frame": {
+        "x": 348,
+        "y": 2,
+        "w": 343,
+        "h": 481
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "card_yearofplenty": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 350,
+        "h": 487
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 343,
+        "h": 480
+      },
+      "frame": {
+        "x": 348,
+        "y": 1451,
+        "w": 343,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "tile_lumber_empty": {
+      "rotated": false,
+      "trimmed": false,
+      "sourceSize": {
+        "w": 415,
+        "h": 480
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 415,
+        "h": 480
+      },
+      "frame": {
+        "x": 420,
+        "y": 486,
+        "w": 415,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "tile_sea": {
+      "rotated": false,
+      "trimmed": false,
+      "sourceSize": {
+        "w": 415,
+        "h": 480
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 415,
+        "h": 480
+      },
+      "frame": {
+        "x": 2,
+        "y": 486,
+        "w": 415,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "tile_shore_2_swswww": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 416,
+        "h": 481
+      },
+      "spriteSourceSize": {
+        "x": 166,
+        "y": 0,
+        "w": 250,
+        "h": 481
+      },
+      "frame": {
+        "x": 694,
+        "y": 2,
+        "w": 250,
+        "h": 481
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "tile_shore_2_swwsww": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 416,
+        "h": 480
+      },
+      "spriteSourceSize": {
+        "x": 2,
+        "y": 0,
+        "w": 414,
+        "h": 480
+      },
+      "frame": {
+        "x": 838,
+        "y": 967,
+        "w": 414,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "tile_shore_3_sswsww": {
+      "rotated": false,
+      "trimmed": false,
+      "sourceSize": {
+        "w": 418,
+        "h": 480
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 418,
+        "h": 480
+      },
+      "frame": {
+        "x": 946,
+        "y": 2,
+        "w": 418,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "tile_shore_3_swswsw": {
+      "rotated": false,
+      "trimmed": true,
+      "sourceSize": {
+        "w": 416,
+        "h": 481
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 1,
+        "w": 416,
+        "h": 480
+      },
+      "frame": {
+        "x": 1364,
+        "y": 485,
+        "w": 416,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "tile_shore_4_ssssww": {
+      "rotated": false,
+      "trimmed": false,
+      "sourceSize": {
+        "w": 416,
+        "h": 480
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 416,
+        "h": 480
+      },
+      "frame": {
+        "x": 946,
+        "y": 485,
+        "w": 416,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "tile_shore_4_ssswsw": {
+      "rotated": false,
+      "trimmed": false,
+      "sourceSize": {
+        "w": 416,
+        "h": 480
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 416,
+        "h": 480
+      },
+      "frame": {
+        "x": 1784,
+        "y": 2,
+        "w": 416,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "tile_shore_6": {
+      "rotated": false,
+      "trimmed": false,
+      "sourceSize": {
+        "w": 416,
+        "h": 480
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 416,
+        "h": 480
+      },
+      "frame": {
+        "x": 1366,
+        "y": 2,
+        "w": 416,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    "tile_wool_empty": {
+      "rotated": false,
+      "trimmed": false,
+      "sourceSize": {
+        "w": 415,
+        "h": 480
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 415,
+        "h": 480
+      },
+      "frame": {
+        "x": 1783,
+        "y": 485,
+        "w": 415,
+        "h": 480
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    }
+  }
+}
