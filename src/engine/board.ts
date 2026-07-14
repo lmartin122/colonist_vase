@@ -29,8 +29,8 @@ const CLASSIC_TYPES: TileType[] = [
   'desert',
 ];
 
-/** Port types around the coast: four generic 3:1 plus one 2:1 per resource. */
-const PORT_TYPES: PortType[] = ['3:1', 'wheat', 'ore', '3:1', 'sheep', '3:1', 'brick', 'wood', '3:1'];
+/** The canonical Catan port set: four generic 3:1 plus one 2:1 per resource (nine ports total). */
+const PORT_TYPE_SEQUENCE: PortType[] = ['3:1', 'wheat', 'ore', '3:1', 'sheep', '3:1', 'brick', 'wood', '3:1'];
 
 export interface BoardOptions {
   layout: 'classic' | 'random';
@@ -149,21 +149,41 @@ export function generateBoard(
   const robberTileId = tiles.find((t) => t.type === 'desert')!.id;
 
   const board: Board = { tiles, vertices, edges, robberTileId };
-  assignPorts(board);
+  let portTypes: readonly PortType[] = PORT_TYPE_SEQUENCE;
+  if (options.layout === 'random') {
+    const shuffledPorts = shuffle(PORT_TYPE_SEQUENCE, cursor);
+    portTypes = shuffledPorts.items;
+    cursor = shuffledPorts.rng;
+  }
+  assignPorts(board, portTypes);
 
   return { board, rng: cursor };
 }
 
-/** Place ports on evenly-spaced coastal edges and tag their vertices. */
-function assignPorts(board: Board): void {
-  const coastal = board.edges
+/** Coastal edges ordered clockwise around the island — the order `PORT_POSITIONS` indexes into. */
+function coastalEdgesByAngle(board: Board): Edge[] {
+  return board.edges
     .filter((e) => e.coastal)
     .sort((a, b) => angle(a.point) - angle(b.point));
+}
+
+/**
+ * Coastal-edge positions (indices into `coastalEdgesByAngle`, clockwise) that
+ * hold a port on the real classic Catan board. Port position is a function of
+ * the board's physical hex shape, not which resource ended up on each tile,
+ * so this applies to every layout — only the port *types* assigned to these
+ * positions vary (fixed order for classic, shuffled for random). The previous
+ * evenly-spaced-by-angle placement didn't match the real board.
+ */
+const PORT_POSITIONS = [0, 3, 7, 10, 13, 17, 20, 23, 27];
+
+/** Place a port at each of `PORT_POSITIONS`, zipped with `portTypes` in clockwise order. */
+function assignPorts(board: Board, portTypes: readonly PortType[]): void {
+  const coastal = coastalEdgesByAngle(board);
   if (coastal.length === 0) return;
-  const spacing = coastal.length / PORT_TYPES.length;
-  PORT_TYPES.forEach((type, i) => {
-    const edge = coastal[Math.floor(i * spacing) % coastal.length];
-    for (const vid of edge.vertexIds) board.vertices[vid].port = type;
+  PORT_POSITIONS.forEach((position, i) => {
+    const edge = coastal[position % coastal.length];
+    for (const vid of edge.vertexIds) board.vertices[vid].port = portTypes[i];
   });
 }
 

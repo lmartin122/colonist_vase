@@ -30,6 +30,32 @@ export function canAfford(bank: ResourceBank, cost: Partial<ResourceBank>): bool
   return RESOURCES.every((r) => bank[r] >= (cost[r] ?? 0));
 }
 
+export function isResource(value: unknown): value is Resource {
+  return typeof value === 'string' && (RESOURCES as readonly string[]).includes(value);
+}
+
+/** Runtime validation for action payloads that may eventually arrive over the network. */
+export function validateResourceBundle(value: unknown, label = 'Resource bundle'): asserts value is Partial<Record<Resource, number>> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object`);
+  for (const [resource, amount] of Object.entries(value)) {
+    if (!isResource(resource)) throw new Error(`${label} contains an unknown resource`);
+    if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount < 0) {
+      throw new Error(`${label} must contain non-negative whole cards`);
+    }
+  }
+}
+
+export function resourceBundleTotal(bundle: Partial<Record<Resource, number>>): number {
+  return RESOURCES.reduce((sum, resource) => sum + (bundle[resource] ?? 0), 0);
+}
+
+export function resourceBundlesOverlap(
+  first: Partial<Record<Resource, number>>,
+  second: Partial<Record<Resource, number>>,
+): boolean {
+  return RESOURCES.some((resource) => (first[resource] ?? 0) > 0 && (second[resource] ?? 0) > 0);
+}
+
 export function totalResources(bank: ResourceBank): number {
   return RESOURCES.reduce((sum, r) => sum + bank[r], 0);
 }

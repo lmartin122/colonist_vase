@@ -16,6 +16,13 @@ export const BANK_PER_RESOURCE = 19;
 
 /** Victory points to win. */
 export const WIN_POINTS = 10;
+/**
+ * Highest score achievable with the standard piece and development-card
+ * supply: 4 cities + 5 settlements (buildCity returns the settlement piece to
+ * stock, so both can be maxed at once) = 13, + longest road (2) + largest
+ * army (2) = 17, + all 5 victoryPoint dev cards = 22.
+ */
+export const MAX_VICTORY_POINTS = 22;
 
 /** Hand size above which a 7 forces a discard of half (rounded down). */
 export const DISCARD_LIMIT = 7;
