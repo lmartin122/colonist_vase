@@ -476,6 +476,49 @@ describe('longest road', () => {
     }
     expect(longestRoadLength(s2, 0)).toBeGreaterThan(longestRoadLength(s, 0));
   });
+
+  it('ends the game for a third player who gains Longest Road from another player\'s move', () => {
+    const base = game(50);
+    // Build a real 5-road chain for player 2, starting from an untouched vertex.
+    const touched = new Set<number>();
+    let frontier = 0;
+    const roads: GameState['roads'] = {};
+    for (let i = 0; i < 5; i++) {
+      touched.add(frontier);
+      const edge = base.board.vertices[frontier].edgeIds.find((e) => roads[e] === undefined)!;
+      roads[edge] = 2;
+      const [a, b] = base.board.edges[edge].vertexIds;
+      frontier = a === frontier ? b : a;
+    }
+    touched.add(frontier);
+
+    // Player 0 (the actor) gets an unrelated settlement to legally build one more road.
+    const actorVertex = base.board.vertices.find((v) => !touched.has(v.id))!.id;
+    const players = base.players.map((p) => p.id === 2
+      ? { ...p, devCards: Array.from({ length: 8 }, () => ({ type: 'victoryPoint' as const, boughtOnTurn: 0, played: false })) }
+      : p);
+
+    let s: GameState = {
+      ...base,
+      players,
+      roads,
+      buildings: { [actorVertex]: { type: 'settlement', owner: 0 } },
+      phase: 'main',
+      currentPlayer: 0,
+      // Stale incumbent with no real roads left, standing in for a road just severed elsewhere.
+      longestRoad: { player: 1, length: 5 },
+    };
+    s = setRes(s, 0, { wood: 5, brick: 5 });
+
+    expect(victoryPoints(s, 2)).toBe(8);
+    expect(longestRoadLength(s, 2)).toBeGreaterThanOrEqual(5);
+
+    const result = applyOrThrow(s, { type: 'buildRoad', edge: legalRoadEdges(s, 0)[0] });
+
+    expect(result.longestRoad.player).toBe(2);
+    expect(result.phase).toBe('gameOver');
+    expect(result.winner).toBe(2);
+  });
 });
 
 function withDevCard(s: GameState, player: number, type: DevCardType): GameState {
