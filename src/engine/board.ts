@@ -29,13 +29,8 @@ const CLASSIC_TYPES: TileType[] = [
   'desert',
 ];
 
-/**
- * The canonical Catan port set: four generic 3:1 plus one 2:1 per resource
- * (nine ports total). Exported so the debug port editor can re-derive valid
- * port types when the user repositions ports, instead of letting them pick
- * an arbitrary type per edge and break the ratio.
- */
-export const PORT_TYPE_SEQUENCE: PortType[] = ['3:1', 'wheat', 'ore', '3:1', 'sheep', '3:1', 'brick', 'wood', '3:1'];
+/** The canonical Catan port set: four generic 3:1 plus one 2:1 per resource (nine ports total). */
+const PORT_TYPE_SEQUENCE: PortType[] = ['3:1', 'wheat', 'ore', '3:1', 'sheep', '3:1', 'brick', 'wood', '3:1'];
 
 export interface BoardOptions {
   layout: 'classic' | 'random';

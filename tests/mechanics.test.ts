@@ -198,9 +198,9 @@ describe('game rules', () => {
   });
 
   it('accepts the maximum achievable victory target and rejects higher targets', () => {
-    expect(createGame({ players: [{ name: 'A', isBot: false }, { name: 'B', isBot: true }], rules: { victoryPoints: MAX_VICTORY_POINTS } }).rules.victoryPoints).toBe(18);
-    expect(() => createGame({ players: [{ name: 'A', isBot: false }, { name: 'B', isBot: true }], rules: { victoryPoints: 19 } })).toThrow(/3 to 18/);
-    expect(() => createGame({ players: [{ name: 'A', isBot: false }, { name: 'B', isBot: true }], rules: { victoryPoints: 20 } })).toThrow(/3 to 18/);
+    expect(createGame({ players: [{ name: 'A', isBot: false }, { name: 'B', isBot: true }], rules: { victoryPoints: MAX_VICTORY_POINTS } }).rules.victoryPoints).toBe(22);
+    expect(() => createGame({ players: [{ name: 'A', isBot: false }, { name: 'B', isBot: true }], rules: { victoryPoints: 23 } })).toThrow(/3 to 22/);
+    expect(() => createGame({ players: [{ name: 'A', isBot: false }, { name: 'B', isBot: true }], rules: { victoryPoints: 24 } })).toThrow(/3 to 22/);
   });
 });
 
