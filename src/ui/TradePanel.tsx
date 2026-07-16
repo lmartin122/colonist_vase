@@ -70,10 +70,10 @@ export function TradePanel({ game, give, onRemoveGive, onResetGive, onClose }: {
 
   const tradeWithBank = () => {
     if (!bankGive || !bankReceive) return;
-    if (dispatch({ type: 'bankTrade', give: bankGive, receive: bankReceive })) onResetGive();
+    if (dispatch({ type: 'bankTrade', give: bankGive, receive: bankReceive, player: humanId })) onResetGive();
   };
   const tradeWithPlayers = () => {
-    if (dispatch({ type: 'createTradeOffer', give, receive: want, anyCount: wantAny })) {
+    if (dispatch({ type: 'createTradeOffer', give, receive: want, anyCount: wantAny, player: humanId })) {
       onResetGive();
       onClose();
     }

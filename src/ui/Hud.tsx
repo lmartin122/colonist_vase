@@ -5,6 +5,7 @@ import { nextBotAction } from '../ai/bot';
 import { COSTS, VP_LARGEST_ARMY, VP_LONGEST_ROAD } from '../engine/constants';
 import { canAfford, publicVictoryPoints, totalResources, victoryPoints } from '../engine/helpers';
 import { longestRoadLength } from '../engine/longestRoad';
+import { isConcurrentPhase } from '../engine/modes';
 import type { DevCardType, GameState, Player, Resource } from '../engine/types';
 import { emptyBank, RESOURCES } from '../engine/types';
 import { PLAYER_CSS } from '../render/palette';
@@ -16,6 +17,7 @@ import { Sidebar } from './Sidebar';
 import { TradePanel } from './TradePanel';
 import { TradeOffersPanel } from './TradeOffersPanel';
 import { StackedCard } from './StackedCard';
+import { useRecentLogEntry } from './useRecentLogEntry';
 
 type Bag = Record<Resource, number>;
 const zeroBag = emptyBank;
@@ -52,6 +54,7 @@ export function Hud() {
       <TradeOffersPanel game={game} />
       <VictoryOverlay game={game} />
       <ErrorToast />
+      <BotActionToast game={game} />
       <CardFlights />
       <SoundManager />
       <DebugPanel />
@@ -78,22 +81,51 @@ function Cost({ cost }: { cost: Partial<Record<Resource, number>> }) {
   );
 }
 
+function BotActionToast({ game }: { game: GameState }) {
+  const humanId = useGame((s) => s.humanId);
+  const entry = useRecentLogEntry(game.log, 1600);
+  const show = entry && entry.player !== null && entry.player !== humanId;
+  return (
+    <AnimatePresence>
+      {show && (
+        <motion.div
+          key={entry!.turn + entry!.message}
+          initial={{ y: -12, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="pointer-events-none absolute left-1/2 top-24 -translate-x-1/2 rounded-xl bg-ink/90 px-4 py-2 text-sm font-bold text-card shadow-pop"
+        >
+          {entry!.message}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 // --- Top bar ---------------------------------------------------------------
 
 function TopBar({ game }: { game: GameState }) {
   const thinking = useGame((s) => s.thinking);
+  const concurrent = isConcurrentPhase(game);
   const active = game.players[game.currentPlayer];
   return (
     <div className="absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-2 sm:top-4 sm:gap-3">
       <div className={`flex items-center gap-2 px-3 py-2 sm:px-4 ${CARD}`}>
-        <span className="h-3 w-3 rounded-full ring-2 ring-white" style={{ background: PLAYER_CSS[active.color] }} />
-        <span className="font-display text-sm font-extrabold sm:text-base">{active.name}</span>
+        {concurrent ? (
+          <span className="font-display text-sm font-extrabold sm:text-base">⚡ Everyone</span>
+        ) : (
+          <>
+            <span className="h-3 w-3 rounded-full ring-2 ring-white" style={{ background: PLAYER_CSS[active.color] }} />
+            <span className="font-display text-sm font-extrabold sm:text-base">{active.name}</span>
+          </>
+        )}
         <span className="text-ink-faint">·</span>
         <span className="text-xs text-ink-soft sm:text-sm">{PHASE_LABEL[game.phase]}</span>
         <span className="text-ink-faint">·</span>
-        <span className="text-xs font-bold tabular-nums text-ink-soft">{game.turn > 0 ? `Turn ${game.turn}` : 'Setup'}</span>
+        <span className="text-xs font-bold tabular-nums text-ink-soft">{game.turn > 0 ? `${concurrent ? 'Round' : 'Turn'} ${game.turn}` : 'Setup'}</span>
         <MatchElapsed />
         <TurnCountdown game={game} />
+        <RoundCountdown game={game} />
         {thinking && <span className="ml-0.5 animate-pulse text-[11px] text-ink-faint">thinking…</span>}
       </div>
     </div>
@@ -177,7 +209,7 @@ function PhaseGuide({ game }: { game: GameState }) {
   const humanId = useGame((s) => s.humanId);
   const [visibleTitle, setVisibleTitle] = useState<string | null>(null);
   const announced = useRef(new Set<string>());
-  const gameJustStarted = game.phase === 'roll' && game.turn === 1;
+  const gameJustStarted = (game.phase === 'roll' || isConcurrentPhase(game)) && game.turn === 1;
   const title = gameJustStarted
     ? 'Let the Game Begin!'
     : game.currentPlayer !== humanId
@@ -233,29 +265,39 @@ function PhaseGuide({ game }: { game: GameState }) {
 
 function PlayersColumn({ game }: { game: GameState }) {
   const humanId = useGame((s) => s.humanId);
+  const concurrent = isConcurrentPhase(game);
+  const lastEntry = useRecentLogEntry(game.log, 700);
   return (
     <div className="absolute right-2 top-14 flex w-40 flex-col gap-2 sm:right-3 sm:top-16 sm:w-56">
       {game.turnOrder.map((playerId) => (
-        <PlayerCard key={playerId} game={game} player={game.players[playerId]} isHuman={playerId === humanId} active={playerId === game.currentPlayer} />
+        <PlayerCard
+          key={playerId}
+          game={game}
+          player={game.players[playerId]}
+          isHuman={playerId === humanId}
+          active={concurrent ? !game.pending.passed[playerId] : playerId === game.currentPlayer}
+          passed={concurrent ? !!game.pending.passed[playerId] : undefined}
+          justActed={lastEntry?.player === playerId}
+        />
       ))}
     </div>
   );
 }
 
-function PlayerCard({ game, player, isHuman, active }: { game: GameState; player: Player; isHuman: boolean; active: boolean }) {
+function PlayerCard({ game, player, isHuman, active, passed, justActed }: { game: GameState; player: Player; isHuman: boolean; active: boolean; passed?: boolean; justActed?: boolean }) {
   const vp = isHuman ? victoryPoints(game, player.id) : publicVictoryPoints(game, player.id);
   const cards = totalResources(player.resources);
   const devCount = player.devCards.filter((c) => !c.played).length;
   const color = PLAYER_CSS[player.color];
   const shownDice = game.phase === 'startingRoll'
     ? game.startingRoll?.rolls[player.id] ?? null
-    : active ? game.dice : null;
+    : (passed === undefined ? active : player.id === game.pending.roundCaptain) ? game.dice : null;
   return (
     <motion.div
       data-player={player.id}
-      animate={{ scale: active ? 1 : 0.98, opacity: active ? 1 : 0.9 }}
+      animate={{ scale: justActed ? 1.03 : active ? 1 : 0.98, opacity: active ? 1 : 0.9 }}
       transition={{ duration: 0.2 }}
-      className={`relative overflow-hidden px-3 py-2 sm:py-2.5 ${CARD} ${active ? 'bg-card-alt' : ''}`}
+      className={`relative overflow-hidden px-3 py-2 transition-shadow sm:py-2.5 ${CARD} ${active ? 'bg-card-alt' : ''} ${justActed ? 'ring-2 ring-p-green' : ''}`}
       style={active ? { boxShadow: `0 0 0 3px ${color}, 0 8px 24px -6px rgba(20,30,40,.45)` } : undefined}
     >
       {/* Color accent strip */}
@@ -263,7 +305,9 @@ function PlayerCard({ game, player, isHuman, active }: { game: GameState; player
       <div className="flex items-center gap-2 pl-1">
         <span className="truncate font-display text-sm font-extrabold">{player.name}</span>
         {player.botDifficulty && <span title={`${player.botDifficulty} bot`} className="rounded-full bg-ink/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-ink-soft">{player.botDifficulty[0]}</span>}
-        {active && <span className="rounded-full bg-ink/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-ink-soft">turn</span>}
+        {passed === undefined
+          ? active && <span className="rounded-full bg-ink/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-ink-soft">turn</span>
+          : <span title={passed ? 'Passed / ready' : 'Still deciding'} className="text-xs">{passed ? '✅' : '⏳'}</span>}
         <span className="ml-auto flex items-baseline gap-0.5">
           <span className="font-display text-2xl font-extrabold leading-none" style={{ color }}>{vp}</span>
         </span>
@@ -316,12 +360,14 @@ function HumanDock({ game }: { game: GameState }) {
   const [tradeGive, setTradeGive] = useState<Bag>(zeroBag);
   const [devPicker, setDevPicker] = useState<null | 'monopoly' | 'yop'>(null);
   const me = game.players[humanId];
-  const myTurn = game.currentPlayer === humanId;
-  const inMain = myTurn && game.phase === 'main';
+  const concurrent = isConcurrentPhase(game);
+  const myTurn = concurrent ? !game.pending.passed[humanId] : game.currentPlayer === humanId;
+  const inMain = myTurn && (game.phase === 'main' || concurrent);
   const canRoll = myTurn && game.phase === 'roll';
   const canStartRoll = myTurn && game.phase === 'startingRoll';
-  const mustResolveAction = game.pending.freeRoads > 0 || build?.kind === 'knight';
+  const mustResolveAction = (game.pending.freeRoads[humanId] ?? 0) > 0 || build?.kind === 'knight';
   const canTakeRoll = canRoll && !mustResolveAction;
+  const passed = !!game.pending.passed[humanId];
   const toggle = (kind: 'road' | 'settlement' | 'city') =>
     setBuild(build?.kind === kind ? null : { kind });
 
@@ -382,7 +428,7 @@ function HumanDock({ game }: { game: GameState }) {
         clearInterval(id);
         dispatch({ type: 'discard', player: humanId, resources: randomDiscard(meRef.current.resources, requiredRef.current) });
       }
-    }, 250);
+    }, 1000);
     return () => clearInterval(id);
     // Re-arm whenever a fresh discard requirement appears.
   }, [discarding, required, humanId, dispatch, game.rules.turnTimer, infiniteTime]);
@@ -413,7 +459,7 @@ function HumanDock({ game }: { game: GameState }) {
           count={1}
           title="Choose a resource to monopolise"
           onPick={(resources) => {
-            dispatch({ type: 'playMonopoly', resource: resources[0] });
+            dispatch({ type: 'playMonopoly', resource: resources[0], player: humanId });
             setDevPicker(null);
           }}
           onClose={() => setDevPicker(null)}
@@ -424,7 +470,7 @@ function HumanDock({ game }: { game: GameState }) {
           count={2}
           title="Choose any two resources"
           onPick={(resources) => {
-            dispatch({ type: 'playYearOfPlenty', resources });
+            dispatch({ type: 'playYearOfPlenty', resources, player: humanId });
             setDevPicker(null);
           }}
           onClose={() => setDevPicker(null)}
@@ -454,7 +500,7 @@ function HumanDock({ game }: { game: GameState }) {
               img={CARD_DEV_BACK}
               label="Dev"
               cost={COSTS.devCard}
-              onClick={() => dispatch({ type: 'buyDevCard' })}
+              onClick={() => dispatch({ type: 'buyDevCard', player: humanId })}
               disabled={!inMain || !canAfford(me.resources, COSTS.devCard) || game.devDeck.length === 0}
             />
             <ActionButton
@@ -490,6 +536,15 @@ function HumanDock({ game }: { game: GameState }) {
               >
                 🎲<span className="ml-1 hidden sm:inline">{canStartRoll ? 'Roll for first' : 'Roll'}</span>
               </button>
+            ) : concurrent ? (
+              <button
+                disabled={!passed && mustResolveAction}
+                onClick={() => dispatch(passed ? { type: 'cancelPass', player: humanId } : { type: 'passRound', player: humanId })}
+                title={passed ? 'Change your mind and keep playing this round' : undefined}
+                className={`${BTN_BASE} flex-1 px-4 text-base ${passed ? 'bg-card-alt text-ink-soft hover:bg-ink/10' : mustResolveAction ? 'bg-card-alt text-ink-faint' : 'bg-p-green text-white shadow-soft hover:-translate-y-0.5 hover:brightness-105'}`}
+              >
+                {passed ? 'Waiting… (tap to resume)' : <>Ready<span className="ml-1 hidden sm:inline">for next round</span></>}
+              </button>
             ) : (
               <button
                 disabled={!inMain || mustResolveAction}
@@ -510,8 +565,8 @@ function HumanDock({ game }: { game: GameState }) {
             Select a spot on the board · <button className="underline" onClick={() => setBuild(null)}>cancel</button>
           </Hint>
         )}
-        {game.pending.freeRoads > 0 && myTurn && (
-          <Hint key="free">Place {game.pending.freeRoads} free road{game.pending.freeRoads > 1 ? 's' : ''}</Hint>
+        {(game.pending.freeRoads[humanId] ?? 0) > 0 && myTurn && (
+          <Hint key="free">Place {game.pending.freeRoads[humanId]} free road{game.pending.freeRoads[humanId] > 1 ? 's' : ''}</Hint>
         )}
       </AnimatePresence>
     </div>
@@ -522,7 +577,7 @@ function TurnCountdown({ game }: { game: GameState }) {
   const humanId = useGame((s) => s.humanId);
   const dispatch = useGame((s) => s.dispatch);
   const debugInfiniteTimer = useGame((s) => s.debugInfiniteTimer);
-  const humanMustAct = game.currentPlayer === humanId && game.phase !== 'discard';
+  const humanMustAct = !isConcurrentPhase(game) && game.currentPlayer === humanId && game.phase !== 'discard';
   const seconds = game.rules.turnTimer;
   const infiniteTime = debugInfiniteTimer?.player === game.currentPlayer && debugInfiniteTimer.turn === game.turn;
   const [remaining, setRemaining] = useState<number>(seconds);
@@ -546,7 +601,7 @@ function TurnCountdown({ game }: { game: GameState }) {
           if (action) dispatch(action);
         }
       }
-    }, 250);
+    }, 1000);
     return () => clearInterval(interval);
   }, [actionKey, dispatch, humanId, humanMustAct, infiniteTime, seconds]);
 
@@ -554,6 +609,40 @@ function TurnCountdown({ game }: { game: GameState }) {
   return (
     <span className={`ml-1 rounded-lg px-2 py-1 text-xs font-extrabold tabular-nums ${remaining <= 5 ? 'bg-p-red text-white' : 'bg-card-alt text-ink'}`}>
       {infiniteTime ? '∞' : `${remaining}s`}
+    </span>
+  );
+}
+
+function RoundCountdown({ game }: { game: GameState }) {
+  const humanId = useGame((s) => s.humanId);
+  const dispatch = useGame((s) => s.dispatch);
+  const humanWaiting = isConcurrentPhase(game) && !game.pending.passed[humanId];
+  const seconds = game.rules.turnTimer;
+  const [remaining, setRemaining] = useState<number>(seconds);
+  const clock = useRef<{ turn: number; startedAt: number }>({ turn: -1, startedAt: 0 });
+
+  useEffect(() => {
+    if (!humanWaiting) return;
+    if (clock.current.turn !== game.turn) {
+      clock.current = { turn: game.turn, startedAt: Date.now() };
+    }
+    const update = () => {
+      const left = seconds - Math.floor((Date.now() - clock.current.startedAt) / 1000);
+      setRemaining(Math.max(0, left));
+      if (left <= 0) dispatch({ type: 'passRound', player: humanId });
+      return left;
+    };
+    update();
+    const interval = setInterval(() => {
+      if (update() <= 0) clearInterval(interval);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [dispatch, game.turn, humanId, humanWaiting, seconds]);
+
+  if (!isConcurrentPhase(game)) return null;
+  return (
+    <span className={`ml-1 rounded-lg px-2 py-1 text-xs font-extrabold tabular-nums ${humanWaiting && remaining <= 5 ? 'bg-p-red text-white' : 'bg-card-alt text-ink'}`}>
+      {humanWaiting ? `${remaining}s` : 'waiting…'}
     </span>
   );
 }
@@ -571,11 +660,8 @@ function RollDiceDisplay({ dice, onRoll }: { dice: [number, number] | null; onRo
       aria-label={dice ? `Rolled ${dice[0]} and ${dice[1]}` : 'Dice ready to roll'}
     >
       {faces.map((value, index) => (
-        <motion.img
+        <motion.div
           key={`${index}-${value}`}
-          src={diceAsset(value)}
-          alt=""
-          draggable={false}
           initial={dice ? { rotate: -25, scale: 0.5 } : undefined}
           animate={dice
             ? { rotate: 0, scale: 1, y: 0 }
@@ -583,8 +669,9 @@ function RollDiceDisplay({ dice, onRoll }: { dice: [number, number] | null; onRo
           transition={dice
             ? { type: 'spring', stiffness: 320, damping: 17 }
             : { repeat: Infinity, repeatType: 'reverse', duration: 0.7, ease: 'easeInOut' }}
-          className="h-14 w-14 drop-shadow-lg"
-        />
+        >
+          <img src={diceAsset(value)} alt="" draggable={false} className="h-14 w-14 drop-shadow-lg" />
+        </motion.div>
       ))}
     </button>
   );
@@ -733,7 +820,9 @@ function DevelopmentCards({ game, me, onPick }: { game: GameState; me: Player; o
   const dispatch = useGame((s) => s.dispatch);
   const setBuild = useGame((s) => s.setBuild);
   const humanId = useGame((s) => s.humanId);
-  const canPlay = game.currentPlayer === humanId && (game.phase === 'roll' || game.phase === 'main') && !game.pending.playedDevThisTurn;
+  const concurrent = isConcurrentPhase(game);
+  const myTurn = concurrent ? !game.pending.passed[humanId] : game.currentPlayer === humanId;
+  const canPlay = myTurn && (game.phase === 'roll' || game.phase === 'main' || concurrent) && !game.pending.playedDevThisTurn[humanId];
 
   const counts: Record<DevCardType, { total: number; playable: number }> = {
     knight: { total: 0, playable: 0 },
@@ -751,9 +840,9 @@ function DevelopmentCards({ game, me, onPick }: { game: GameState; me: Player; o
   const play = (type: DevCardType) => canPlay && counts[type].playable > 0;
 
   return (
-    <div className="relative flex shrink-0 items-center gap-2 border-l border-ink/10 pl-2 dark:border-white/10">
+    <div data-dev-hand className="relative flex shrink-0 items-center gap-2 border-l border-ink/10 pl-2 dark:border-white/10">
       {counts.knight.total > 0 && <DevHandCard type="knight" count={counts.knight.total} enabled={play('knight')} onClick={() => setBuild({ kind: 'knight' })} />}
-      {counts.roadBuilding.total > 0 && <DevHandCard type="roadBuilding" count={counts.roadBuilding.total} enabled={play('roadBuilding')} onClick={() => dispatch({ type: 'playRoadBuilding' })} />}
+      {counts.roadBuilding.total > 0 && <DevHandCard type="roadBuilding" count={counts.roadBuilding.total} enabled={play('roadBuilding')} onClick={() => dispatch({ type: 'playRoadBuilding', player: humanId })} />}
       {counts.monopoly.total > 0 && <DevHandCard type="monopoly" count={counts.monopoly.total} enabled={play('monopoly')} onClick={() => onPick('monopoly')} />}
       {counts.yearOfPlenty.total > 0 && <DevHandCard type="yearOfPlenty" count={counts.yearOfPlenty.total} enabled={play('yearOfPlenty')} onClick={() => onPick('yop')} />}
       {counts.victoryPoint.total > 0 && <DevHandCard type="victoryPoint" count={counts.victoryPoint.total} enabled={false} />}
@@ -937,7 +1026,7 @@ function ErrorToast() {
 
 function Overlay({ children }: { children: React.ReactNode }) {
   return (
-    <div className="pointer-events-auto absolute inset-0 z-20 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+    <div className="pointer-events-auto absolute inset-0 z-20 flex items-center justify-center bg-black/60 p-4">
       {children}
     </div>
   );
@@ -950,5 +1039,6 @@ const PHASE_LABEL: Record<GameState['phase'], string> = {
   discard: 'Discard cards',
   moveRobber: 'Move robber',
   main: 'Build & trade',
+  rushRound: 'Everyone acts at once',
   gameOver: 'Game over',
 };

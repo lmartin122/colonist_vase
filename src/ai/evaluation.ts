@@ -1,6 +1,7 @@
 import type { Action } from '../engine/actions';
-import { NUMBER_PIPS } from '../engine/constants';
+import { LARGEST_ARMY_MIN, LONGEST_ROAD_MIN, NUMBER_PIPS } from '../engine/constants';
 import { publicVictoryPoints, resourceValue, totalResources, victoryPoints } from '../engine/helpers';
+import { longestRoadLength } from '../engine/longestRoad';
 import { legalSettlementVertices } from '../engine/placement';
 import type { GameState, Resource } from '../engine/types';
 import { RESOURCES } from '../engine/types';
@@ -32,7 +33,9 @@ export function evaluateState(state: GameState, actor: number): number {
   const resources = RESOURCES.reduce((sum, resource) => sum + me.resources[resource] * resourceValue(resource), 0);
   const variety = RESOURCES.filter((resource) => me.resources[resource] > 0).length;
   const reachable = legalSettlementVertices(state, actor, false).length;
-  const awardScore = (state.longestRoad.player === actor ? 4 : 0) + (state.largestArmy.player === actor ? 4 : 0);
+  const roadChase = state.longestRoad.player === actor ? 0 : Math.max(0, longestRoadLength(state, actor) - (LONGEST_ROAD_MIN - 2)) * 0.25;
+  const armyChase = state.largestArmy.player === actor ? 0 : Math.max(0, me.knightsPlayed - (LARGEST_ARMY_MIN - 1)) * 0.4;
+  const awardScore = (state.longestRoad.player === actor ? 4 : roadChase) + (state.largestArmy.player === actor ? 4 : armyChase);
   const robberPenalty = state.board.tiles[state.board.robberTileId].vertexIds.some((vertex) => state.buildings[vertex]?.owner === actor) ? 2.5 : 0;
   return victoryPoints(state, actor) * 35 + production * 1.8 + resources * 0.65 + variety * 0.8 + Math.min(reachable, 4) * 0.7 + awardScore - publicThreat * 1.2 - robberPenalty;
 }

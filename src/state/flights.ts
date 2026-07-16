@@ -14,11 +14,14 @@ export type Anchor =
   | { t: 'tile'; tile: number }
   | { t: 'bank'; resource: Resource }
   | { t: 'hand'; resource: Resource }
-  | { t: 'player'; id: number };
+  | { t: 'player'; id: number }
+  | { t: 'devDeck' }
+  | { t: 'devHand' }
+  | { t: 'devStack'; id: number };
 
 export interface Flight {
   id: string;
-  resource: Resource;
+  resource: Resource | null;
   from: Anchor;
   to: Anchor;
   delay: number;
@@ -60,37 +63,54 @@ function cards(resource: Resource, from: Anchor, to: Anchor, count: number, base
 const delta = (before: GameState, after: GameState, id: number, r: Resource) =>
   after.players[id].resources[r] - before.players[id].resources[r];
 
+/**
+ * Who actually performed this action. Most actions carry an optional
+ * `player` field for concurrent modes (e.g. Rush) where `currentPlayer` is
+ * pinned to the round captain and doesn't track the real actor; classic-mode
+ * actions (and calls that omit it) fall back to `currentPlayer` as before.
+ */
+function actorOf(before: GameState, action: Action): number {
+  return 'player' in action && action.player !== undefined ? action.player : before.currentPlayer;
+}
+
 export function deriveFlights(
   before: GameState,
   after: GameState,
   action: Action,
   humanId: number,
 ): Flight[] {
+  const startedRushRound = after.rules.mode === 'rush' && after.turn > before.turn && after.dice !== null;
   switch (action.type) {
     case 'placeSetupRoad':
-      return setupGrantFlights(before, after, humanId);
+      return [
+        ...setupGrantFlights(before, after, humanId),
+        ...(startedRushRound ? production(before, after, humanId, setupGrantGains(before, after)) : []),
+      ];
     case 'rollDice':
       return production(before, after, humanId);
+    case 'passRound':
+      return startedRushRound ? production(before, after, humanId) : [];
     case 'discard':
       return discardFlights(action.player, action.resources, humanId);
     case 'moveRobber':
+      return stealFlights(before, after, actorOf(before, action), humanId);
     case 'playKnight':
-      return stealFlights(before, after, humanId);
+      return stealFlights(before, after, actorOf(before, action), humanId);
     case 'buildRoad':
     case 'buildSettlement':
     case 'buildCity':
+      return playerBankDiff(before, after, actorOf(before, action), humanId);
     case 'buyDevCard':
-      return playerBankDiff(before, after, before.currentPlayer, humanId);
+      return buyDevCardFlights(before, after, actorOf(before, action), humanId);
     case 'bankTrade':
-      return playerBankDiff(before, after, before.currentPlayer, humanId);
+      return playerBankDiff(before, after, actorOf(before, action), humanId);
     case 'playerTrade':
-      return tradeFlights(before, after, action.partner, humanId);
     case 'completeTradeOffer':
-      return tradeFlights(before, after, action.partner, humanId);
+      return tradeFlights(before, after, actorOf(before, action), action.partner, humanId);
     case 'playMonopoly':
-      return monopolyFlights(before, after, action.resource, humanId);
+      return monopolyFlights(before, after, action.resource, actorOf(before, action), humanId);
     case 'playYearOfPlenty':
-      return yearOfPlentyFlights(action.resources, before.currentPlayer, humanId);
+      return yearOfPlentyFlights(action.resources, actorOf(before, action), humanId);
     default:
       return [];
   }
@@ -120,8 +140,32 @@ function setupGrantFlights(before: GameState, after: GameState, humanId: number)
   return flights;
 }
 
+/** Resource gains attributable to the final setup placement, so an automatic
+ * Rush opening roll only animates the additional production delta. */
+function setupGrantGains(before: GameState, after: GameState): { player: number; gains: Partial<Record<Resource, number>> } | null {
+  const vertex = before.setup?.lastSettlement;
+  if (vertex === null || vertex === undefined) return null;
+  const player = before.currentPlayer;
+  const raw: Partial<Record<Resource, number>> = {};
+  for (const tileId of before.board.vertices[vertex].tileIds) {
+    const tile = before.board.tiles[tileId];
+    if (tile.type === 'desert') continue;
+    raw[tile.type] = (raw[tile.type] ?? 0) + 1;
+  }
+  const gains: Partial<Record<Resource, number>> = {};
+  for (const resource of RESOURCES) {
+    gains[resource] = Math.min(raw[resource] ?? 0, Math.max(0, delta(before, after, player, resource)));
+  }
+  return { player, gains };
+}
+
 /** Resources fly from the producing hexagons to each owner's hand/panel. */
-function production(before: GameState, after: GameState, humanId: number): Flight[] {
+function production(
+  before: GameState,
+  after: GameState,
+  humanId: number,
+  excluded: { player: number; gains: Partial<Record<Resource, number>> } | null = null,
+): Flight[] {
   const dice = after.dice;
   if (!dice) return [];
   const roll = dice[0] + dice[1];
@@ -143,7 +187,8 @@ function production(before: GameState, after: GameState, humanId: number): Fligh
   const flights: Flight[] = [];
   for (const g of raw) {
     const key = `${g.owner}|${g.resource}`;
-    const cap = delta(before, after, g.owner, g.resource);
+    const cap = delta(before, after, g.owner, g.resource)
+      - (excluded?.player === g.owner ? excluded.gains[g.resource] ?? 0 : 0);
     const already = used.get(key) ?? 0;
     const allow = Math.max(0, Math.min(g.count, cap - already));
     if (allow <= 0) continue;
@@ -168,8 +213,7 @@ function discardFlights(
 }
 
 /** The single stolen card flies from victim to thief (resource found by diff). */
-function stealFlights(before: GameState, after: GameState, humanId: number): Flight[] {
-  const thief = after.currentPlayer;
+function stealFlights(before: GameState, after: GameState, thief: number, humanId: number): Flight[] {
   for (let victim = 0; victim < before.players.length; victim++) {
     if (victim === thief) continue;
     for (const r of RESOURCES) {
@@ -179,6 +223,15 @@ function stealFlights(before: GameState, after: GameState, humanId: number): Fli
     }
   }
   return [];
+}
+
+function buyDevCardFlights(before: GameState, after: GameState, player: number, humanId: number): Flight[] {
+  const payment = playerBankDiff(before, after, player, humanId);
+  const to: Anchor = player === humanId ? { t: 'devHand' } : { t: 'devStack', id: player };
+  return [
+    ...payment,
+    { id: uid(), resource: null, from: { t: 'devDeck' }, to, delay: payment.length * 55 },
+  ];
 }
 
 /** Player↔bank movements (builds, dev cards, bank trades) from the diff. */
@@ -193,8 +246,7 @@ function playerBankDiff(before: GameState, after: GameState, player: number, hum
 }
 
 /** Player-to-player trade: each side's given cards fly to the other. */
-function tradeFlights(before: GameState, after: GameState, partner: number, humanId: number): Flight[] {
-  const me = before.currentPlayer;
+function tradeFlights(before: GameState, after: GameState, me: number, partner: number, humanId: number): Flight[] {
   const flights: Flight[] = [];
   for (const r of RESOURCES) {
     const dMe = delta(before, after, me, r);
@@ -205,8 +257,7 @@ function tradeFlights(before: GameState, after: GameState, partner: number, huma
 }
 
 /** Monopoly: every opponent's cards of that resource fly to the current player. */
-function monopolyFlights(before: GameState, after: GameState, resource: Resource, humanId: number): Flight[] {
-  const taker = before.currentPlayer;
+function monopolyFlights(before: GameState, after: GameState, resource: Resource, taker: number, humanId: number): Flight[] {
   const flights: Flight[] = [];
   for (let p = 0; p < before.players.length; p++) {
     if (p === taker) continue;

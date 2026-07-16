@@ -1,5 +1,6 @@
 import type { Action } from '../engine/actions';
 import { canAfford } from '../engine/helpers';
+import { isConcurrentPhase } from '../engine/modes';
 import type { GameState } from '../engine/types';
 
 /**
@@ -77,10 +78,20 @@ function element(key: SoundKey): HTMLAudioElement | null {
   return el;
 }
 
+// Skip re-triggering the identical sound within this window so a burst of
+// same-type bot actions (e.g. three settlements in a row in a Rush round)
+// doesn't stack several full-volume copies on top of each other.
+const REPEAT_COOLDOWN_MS = 150;
+const lastPlayedAt = new Map<SoundKey, number>();
+
 export function playSound(key: SoundKey): void {
   if (!enabled) return;
+  const now = Date.now();
+  const last = lastPlayedAt.get(key);
+  if (last !== undefined && now - last < REPEAT_COOLDOWN_MS) return;
   const base = element(key);
   if (!base) return;
+  lastPlayedAt.set(key, now);
   const node = base.cloneNode(true) as HTMLAudioElement;
   node.volume = VOLUME[key] ?? DEFAULT_VOLUME;
   // Autoplay can reject until the first user gesture; ignore that rejection.
@@ -100,7 +111,8 @@ export function preloadSounds(): void {
 export function deriveSounds(before: GameState, after: GameState, action: Action, humanId: number): SoundKey[] {
   const out: SoundKey[] = [];
 
-  if (action.type === 'rollDice') out.push(DICE[Math.floor(Math.random() * DICE.length)]);
+  const startedRushRound = after.rules.mode === 'rush' && after.turn > before.turn && after.dice !== null;
+  if (action.type === 'rollDice' || startedRushRound) out.push(DICE[Math.floor(Math.random() * DICE.length)]);
   if (action.type === 'buildRoad' || action.type === 'placeSetupRoad') out.push('roadPlace');
   if (action.type === 'buildSettlement' || action.type === 'placeSetupSettlement') out.push('settlementPlace');
   if (action.type === 'buildCity') out.push('cityPlace');
@@ -137,7 +149,7 @@ export function deriveSounds(before: GameState, after: GameState, action: Action
   if (action.type === 'completeTradeOffer') out.push('offerAccepted');
 
   // Control just handed to the human.
-  if (before.currentPlayer !== humanId && after.currentPlayer === humanId && after.phase !== 'gameOver') out.push('yourTurn');
+  if (before.currentPlayer !== humanId && after.currentPlayer === humanId && after.phase !== 'gameOver' && !isConcurrentPhase(after)) out.push('yourTurn');
 
   return out;
 }

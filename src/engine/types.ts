@@ -123,6 +123,7 @@ export type Phase =
   | 'discard' // players over the limit must discard after a 7
   | 'moveRobber' // current player moves robber (+ steals)
   | 'main' // build / trade / play dev cards, then end turn
+  | 'rushRound' // Rush mode: every player may act; ends when all pass or time runs out
   | 'gameOver';
 
 export interface GameState {
@@ -161,14 +162,18 @@ export interface GameState {
   pending: {
     /** Player indices that still must discard, with how many. */
     discards: Record<number, number>;
-    /** Free roads granted (road building card / setup) before returning to main. */
-    freeRoads: number;
-    /** Dev card already played this turn (only one allowed). */
-    playedDevThisTurn: boolean;
+    /** Free roads granted (road building card / setup) before returning to main, per player. */
+    freeRoads: Record<number, number>;
+    /** Dev card already played this turn (only one allowed), per player. */
+    playedDevThisTurn: Record<number, boolean>;
     /** True once the current player has rolled this turn. */
     hasRolled: boolean;
-    /** Prevents a bot from repeatedly proposing the same trade in one turn. */
-    botTradeOfferedThisTurn: boolean;
+    /** Prevents a bot from repeatedly proposing the same trade in one turn, per player. */
+    botTradeOfferedThisTurn: Record<number, boolean>;
+    /** Rush mode: players who have pressed Pass/Ready this round. */
+    passed: Record<number, boolean>;
+    /** Rush mode: player who resolves the robber on a 7 for the current round; rotates each round. */
+    roundCaptain: number;
   };
 
   /** Player trade offers created during the active turn. */
@@ -187,6 +192,8 @@ export interface TradeOfferResponse {
 
 export interface TradeOffer {
   id: number;
+  /** Round/turn in which the offer was created. */
+  createdTurn: number;
   proposer: number;
   give: Partial<Record<Resource, number>>;
   receive: Partial<Record<Resource, number>>;
@@ -196,7 +203,12 @@ export interface TradeOffer {
   responses: Record<number, TradeOfferResponse>;
 }
 
+export type GameModeId = 'classic' | 'rush';
+
 export interface GameRules {
+  /** Classic: one player acts per turn. Rush: every round, all players act at once. */
+  mode: GameModeId;
+  /** Classic: seconds per turn. Rush: seconds per round. */
   turnTimer: 15 | 30 | 60;
   victoryPoints: number;
   discardLimit: number;

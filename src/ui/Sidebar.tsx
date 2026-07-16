@@ -12,11 +12,14 @@ import {
 } from '../assets';
 import { publicVictoryPoints, totalResources, victoryPoints } from '../engine/helpers';
 import { longestRoadLength } from '../engine/longestRoad';
+import { isConcurrentPhase } from '../engine/modes';
 import type { GameState, Player } from '../engine/types';
 import { RESOURCES } from '../engine/types';
 import { PLAYER_CSS } from '../render/palette';
 import { useGame } from '../state/store';
+import { ChatPanel } from './ChatPanel';
 import { StackedCard } from './StackedCard';
+import { useRecentLogEntry } from './useRecentLogEntry';
 
 /**
  * Right game sidebar (colonist.io-style): event log, chat, an approximate bank
@@ -25,13 +28,14 @@ import { StackedCard } from './StackedCard';
  */
 export function Sidebar({ game }: { game: GameState }) {
   const humanId = useGame((s) => s.humanId);
+  const lastEntry = useRecentLogEntry(game.log, 700);
   return (
     <aside className="pointer-events-auto absolute bottom-3 right-0 top-0 z-10 hidden w-[300px] flex-col gap-2 px-2 pt-2 md:flex lg:w-[330px]">
       <HistoryChatPanels game={game} />
       <BankSummary game={game} />
       <div className="flex flex-col gap-1.5">
         {game.turnOrder.map((playerId) => (
-          <PlayerPanel key={playerId} game={game} player={game.players[playerId]} isHuman={playerId === humanId} />
+          <PlayerPanel key={playerId} game={game} player={game.players[playerId]} isHuman={playerId === humanId} justActed={lastEntry?.player === playerId} />
         ))}
       </div>
     </aside>
@@ -46,52 +50,20 @@ function LogPane({ game }: { game: GameState }) {
     if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
   }, [game.log.length]);
   return (
-    <div
-      ref={ref}
-      className="min-h-0 overflow-y-auto rounded-2xl bg-card p-3 text-sm text-ink shadow-panel ring-1 ring-black/5 dark:ring-white/10"
-    >
-      {game.log.slice(-40).map((e, i) => (
-        <div key={i} className="flex items-start gap-1.5 leading-6">
-          {e.player !== null && (
-            <span
-              className="mt-2 h-2 w-2 shrink-0 rounded-full"
-              style={{ background: PLAYER_CSS[game.players[e.player].color] }}
-            />
-          )}
-          <span className={e.player === null ? 'text-ink-soft' : ''}>{e.message}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// --- Chat (hardcoded template for now) -------------------------------------
-
-function ChatPane() {
-  const [open, setOpen] = useState(true);
-  return (
-    <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-card text-ink shadow-panel ring-1 ring-black/5 dark:ring-white/10">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between px-3 py-2 font-display font-extrabold"
-      >
-        <span>💬 Chat</span>
-        <span className={`transition-transform ${open ? '' : 'rotate-180'}`}>⌃</span>
-      </button>
-      {open && (
-        <div className="flex min-h-0 flex-1 flex-col border-t border-black/5 px-3 py-2 dark:border-white/10">
-          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto text-xs text-ink-soft">
-            <p><b className="text-ink">Ada:</b> gl hf! 🎲</p>
-            <p><b className="text-ink">Bram:</b> anyone got wheat?</p>
-            <p className="text-ink-faint italic">Chat is a preview — coming soon.</p>
+    <div className="min-h-0 overflow-hidden rounded-2xl bg-card shadow-panel ring-1 ring-black/5 dark:ring-white/10">
+      <div ref={ref} className="h-full overflow-x-hidden overflow-y-auto p-3 text-sm text-ink">
+        {game.log.slice(-40).map((e, i) => (
+          <div key={i} className="flex items-start gap-1.5 leading-6">
+            {e.player !== null && (
+              <span
+                className="mt-2 h-2 w-2 shrink-0 rounded-full"
+                style={{ background: PLAYER_CSS[game.players[e.player].color] }}
+              />
+            )}
+            <span className={e.player === null ? 'text-ink-soft' : ''}>{e.message}</span>
           </div>
-          <input
-            disabled
-            placeholder="Type a message…"
-            className="mt-2 w-full cursor-not-allowed rounded-lg bg-card-alt px-2.5 py-1.5 text-xs text-ink-faint outline-none"
-          />
-        </div>
-      )}
+        ))}
+      </div>
     </div>
   );
 }
@@ -128,17 +100,19 @@ function BankSummary({ game }: { game: GameState }) {
             />
           </div>
         ))}
-        <StackedCard
-          src={CARD_DEV_BACK}
-          count={game.rules.hideBankCards ? 1 : game.devDeck.length}
-          alt="Development card"
-          title={game.rules.hideBankCards ? 'dev cards: hidden' : `dev cards: ${game.devDeck.length}`}
-          direction="up"
-          cardWidth={24}
-          cardHeight={36}
-          overlap={4}
-          visibleCount={stackHeight(game.rules.hideBankCards ? 1 : game.devDeck.length)}
-        />
+        <div data-dev-deck>
+          <StackedCard
+            src={CARD_DEV_BACK}
+            count={game.rules.hideBankCards ? 1 : game.devDeck.length}
+            alt="Development card"
+            title={game.rules.hideBankCards ? 'dev cards: hidden' : `dev cards: ${game.devDeck.length}`}
+            direction="up"
+            cardWidth={24}
+            cardHeight={36}
+            overlap={4}
+            visibleCount={stackHeight(game.rules.hideBankCards ? 1 : game.devDeck.length)}
+          />
+        </div>
       </div>
     </div>
   );
@@ -146,8 +120,10 @@ function BankSummary({ game }: { game: GameState }) {
 
 // --- Player panel ----------------------------------------------------------
 
-function PlayerPanel({ game, player, isHuman }: { game: GameState; player: Player; isHuman: boolean }) {
-  const active = game.currentPlayer === player.id;
+function PlayerPanel({ game, player, isHuman, justActed }: { game: GameState; player: Player; isHuman: boolean; justActed?: boolean }) {
+  const concurrent = isConcurrentPhase(game);
+  const active = concurrent ? !game.pending.passed[player.id] : game.currentPlayer === player.id;
+  const passed = concurrent ? !!game.pending.passed[player.id] : undefined;
   const color = PLAYER_CSS[player.color];
   const vp = isHuman ? victoryPoints(game, player.id) : publicVictoryPoints(game, player.id);
   const handSize = totalResources(player.resources);
@@ -158,23 +134,26 @@ function PlayerPanel({ game, player, isHuman }: { game: GameState; player: Playe
   const hasRoad = game.longestRoad.player === player.id;
   const shownDice = game.phase === 'startingRoll'
     ? game.startingRoll?.rolls[player.id] ?? null
-    : active ? game.dice : null;
+    : (concurrent ? player.id === game.pending.roundCaptain : active) ? game.dice : null;
 
   return (
     <div
       data-player={player.id}
-      className={`flex items-center gap-2 rounded-2xl px-2.5 py-2 shadow-panel ring-1 transition ${
+      className={`flex items-center gap-2 rounded-2xl px-2.5 py-2 shadow-panel ring-1 transition-all ${
         isHuman ? 'bg-card' : 'bg-card/90'
-      } ${active ? 'bg-card-alt ring-2' : 'ring-black/5 dark:ring-white/10'}`}
-      style={active ? { boxShadow: `0 0 0 3px ${color}, 0 8px 24px -6px rgba(20,30,40,.45)` } : undefined}
+      } ${justActed ? 'ring-2 ring-p-green' : active ? 'bg-card-alt ring-2' : 'ring-black/5 dark:ring-white/10'}`}
+      style={active && !justActed ? { boxShadow: `0 0 0 3px ${color}, 0 8px 24px -6px rgba(20,30,40,.45)` } : undefined}
     >
       <Avatar color={color} isHuman={isHuman} vp={vp} active={active} />
       <div className="flex min-w-0 flex-1 items-center justify-between gap-1.5">
         <span className="mr-auto truncate font-display text-sm font-bold text-ink">{player.name}</span>
         {player.botDifficulty && <span title={`${player.botDifficulty} bot`} className="rounded-md bg-ink/10 px-1 py-0.5 text-[8px] font-extrabold uppercase text-ink-soft">{player.botDifficulty[0]}</span>}
+        {passed !== undefined && <span title={passed ? 'Passed / ready' : 'Still deciding'} className="text-xs">{passed ? '✅' : '⏳'}</span>}
         {shownDice && <RollDice dice={shownDice} />}
         <CountCard src={overLimit ? CARD_HIDDEN_WARNING : CARD_HIDDEN} count={handSize} playerId={player.id} />
-        <CountCard src={CARD_DEV_BACK} count={devCount} />
+        <div data-dev-stack={player.id}>
+          <CountCard src={CARD_DEV_BACK} count={devCount} />
+        </div>
         <StatIcon
           src={hasArmy ? LARGEST_ARMY_HL : LARGEST_ARMY}
           count={player.knightsPlayed}
@@ -190,6 +169,10 @@ function PlayerPanel({ game, player, isHuman }: { game: GameState; player: Playe
       </div>
     </div>
   );
+}
+
+function historyChatRows(historyPercent: number): string {
+  return `minmax(0, ${historyPercent}fr) 10px minmax(0, ${100 - historyPercent}fr)`;
 }
 
 function HistoryChatPanels({ game }: { game: GameState }) {
@@ -208,7 +191,7 @@ function HistoryChatPanels({ game }: { game: GameState }) {
     const bounds = host.getBoundingClientRect();
     const percent = ((event.clientY - bounds.top) / bounds.height) * 100;
     livePercent.current = Math.min(78, Math.max(22, percent));
-    host.style.gridTemplateRows = `${livePercent.current}% 10px minmax(0, 1fr)`;
+    host.style.gridTemplateRows = historyChatRows(livePercent.current);
   };
   const finishResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
@@ -217,7 +200,7 @@ function HistoryChatPanels({ game }: { game: GameState }) {
   };
 
   return (
-    <div ref={hostRef} className="grid min-h-[220px] flex-1" style={{ gridTemplateRows: `${historyPercent}% 10px minmax(0, 1fr)` }}>
+    <div ref={hostRef} className="grid min-h-[220px] flex-1 overflow-hidden" style={{ gridTemplateRows: historyChatRows(historyPercent) }}>
       <LogPane game={game} />
       <div
         role="separator"
@@ -232,7 +215,7 @@ function HistoryChatPanels({ game }: { game: GameState }) {
       >
         <span className="h-1 w-14 rounded-full bg-white/20 opacity-0 shadow-sm transition group-hover:bg-white/70 group-hover:opacity-100 group-active:bg-white group-active:opacity-100" />
       </div>
-      <ChatPane />
+      <ChatPanel />
     </div>
   );
 }

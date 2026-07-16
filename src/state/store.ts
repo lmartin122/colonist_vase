@@ -1,7 +1,8 @@
 import { create } from 'zustand';
-import { nextBotAction } from '../ai/bot';
+import { botHasMoveAvailable, nextBotAction } from '../ai/bot';
 import type { Action } from '../engine/actions';
 import { createGame, type GameConfig } from '../engine/game';
+import { isConcurrentPhase } from '../engine/modes';
 import { reduce } from '../engine/reduce';
 import type { GameState } from '../engine/types';
 import { deriveFlights, emitFlights } from './flights';
@@ -66,35 +67,56 @@ const DELAYS: Record<string, number> = {
   moveRobber: 750,
   discard: 450,
   main: 480,
+  rushRound: 600,
+};
+
+/** Concurrent placement conflicts that should clear a stale build selection. */
+const SNIPED_SPOT_ERRORS: Partial<Record<Action['type'], string>> = {
+  buildRoad: 'Edge already has a road',
+  buildSettlement: 'Spot is occupied or too close to another building',
 };
 
 let botRunning = false;
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/**
- * Decide which player an automated (bot) action is owed for, or null when the
- * game is waiting on the human. Bot discards are handled regardless of whose
- * turn it is; every other phase belongs to the current player.
- */
-function automatedActor(game: GameState, humanId: number): number | null {
+/** Select the next bot that can make progress without waiting on the human. */
+export function automatedActor(game: GameState, humanId: number): number | null {
   if (game.phase === 'gameOver') return null;
-  if (game.tradeOffers.some((offer) => offer.target === humanId && offer.responses[humanId]?.status === 'pending')) return null;
   if (game.phase === 'discard') {
     const botOwing = Object.keys(game.pending.discards)
       .map(Number)
       .find((p) => p !== humanId);
     return botOwing ?? null;
   }
+  if (game.phase === 'moveRobber') {
+    return game.players[game.currentPlayer].isBot ? game.currentPlayer : null;
+  }
+  if (isConcurrentPhase(game)) {
+    // Rotate the scan start so earlier seats cannot starve later bots.
+    const bots = game.turnOrder.filter((id) => id !== humanId && game.players[id].isBot);
+    if (!bots.length) return null;
+    const start = game.log.length % bots.length;
+    for (let i = 0; i < bots.length; i++) {
+      const id = bots[(start + i) % bots.length];
+      if (!game.pending.passed[id] && botHasMoveAvailable(game, id)) return id;
+    }
+    return null;
+  }
+  if (game.tradeOffers.some((offer) => offer.target === humanId && offer.responses[humanId]?.status === 'pending')) return null;
   return game.players[game.currentPlayer].isBot ? game.currentPlayer : null;
 }
 
 function simulationActor(game: GameState): number {
   if (game.phase === 'discard') return Number(Object.keys(game.pending.discards)[0]);
+  if (isConcurrentPhase(game)) return game.turnOrder.find((id) => !game.pending.passed[id]) ?? game.currentPlayer;
   return game.currentPlayer;
 }
 
 function simulationAction(game: GameState, humanId: number): Action | null {
+  if (game.phase === 'discard' || game.phase === 'moveRobber') {
+    return nextBotAction(game, simulationActor(game));
+  }
   const awaitingHuman = game.tradeOffers.find((offer) => offer.responses[humanId]?.status === 'pending');
   if (awaitingHuman) {
     return { type: 'respondTradeOffer', offerId: awaitingHuman.id, responder: humanId, accepted: false };
@@ -124,9 +146,12 @@ export const useGame = create<Store>((set, get) => {
         if (!action) break;
         const result = reduce(current, action);
         if (!result.ok) {
-          // Safety net: a bot should never emit an illegal move; end its turn.
           console.warn('Bot produced illegal action:', action, result.error);
-          const fallback = reduce(current, { type: 'endTurn' });
+          const fallbackAction: Action | null = isConcurrentPhase(current)
+            ? { type: 'passRound', player: actor }
+            : current.phase === 'main' ? { type: 'endTurn' } : null;
+          if (!fallbackAction) break;
+          const fallback = reduce(current, fallbackAction);
           if (fallback.ok) set({ game: fallback.state, ...timingFor(fallback.state) });
           else break;
           continue;
@@ -191,11 +216,13 @@ export const useGame = create<Store>((set, get) => {
     },
 
     dispatch(action) {
-      const { game } = get();
+      const { game, build } = get();
       if (!game) return false;
       const result = reduce(game, action);
       if (!result.ok) {
-        set({ error: result.error });
+        const snipedMessage = SNIPED_SPOT_ERRORS[action.type];
+        const sniped = build !== null && snipedMessage !== undefined && result.error === snipedMessage;
+        set(sniped ? { error: "Someone built there first — pick another spot.", build: null } : { error: result.error });
         return false;
       }
       set({ game: result.state, error: null, build: null, ...timingFor(result.state) });
@@ -234,7 +261,7 @@ export const useGame = create<Store>((set, get) => {
     fastForwardTurn() {
       const game = get().game;
       if (!game) return;
-      if (game.phase === 'startingRoll' || game.phase === 'setup' || game.phase === 'discard') {
+      if (game.phase === 'startingRoll' || game.phase === 'setup' || game.phase === 'discard' || isConcurrentPhase(game)) {
         simulate((current) => current.phase === game.phase);
         return;
       }

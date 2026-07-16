@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { isConcurrentPhase } from '../engine/modes';
 import type { DevCardType } from '../engine/types';
 import { RESOURCES } from '../engine/types';
 import { RESOURCE_CARD } from '../assets';
@@ -30,7 +31,8 @@ export function DebugPanel() {
   const [devCard, setDevCard] = useState<DevCardType>('knight');
 
   if (!enabled || !game || game.phase === 'gameOver') return null;
-  const canTriggerRobber = game.currentPlayer === humanId && (game.phase === 'roll' || game.phase === 'main');
+  const concurrent = isConcurrentPhase(game);
+  const canTriggerRobber = (concurrent || game.currentPlayer === humanId) && (concurrent || game.phase === 'roll' || game.phase === 'main');
   const infiniteForCurrentTurn = infiniteTimer?.player === game.currentPlayer && infiniteTimer.turn === game.turn;
 
   return (

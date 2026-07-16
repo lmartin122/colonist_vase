@@ -187,7 +187,9 @@ export function GameCanvas() {
                   key={playerId}
                   type="button"
                   onClick={() => {
-                    dispatch({ type: robberChoice.action, tile: robberChoice.tile, stealFrom: playerId });
+                    dispatch(robberChoice.action === 'playKnight'
+                      ? { type: 'playKnight', tile: robberChoice.tile, stealFrom: playerId, player: humanId }
+                      : { type: 'moveRobber', tile: robberChoice.tile, stealFrom: playerId, player: humanId });
                     setRobberChoice(null);
                   }}
                   className="flex min-w-24 flex-1 flex-col items-center gap-1 rounded-xl bg-card-alt px-3 py-3 text-center text-sm font-extrabold transition hover:-translate-y-0.5 hover:shadow-soft"

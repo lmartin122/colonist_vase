@@ -63,11 +63,10 @@ export function legalCityVertices(state: GameState, playerId: number): number[] 
 }
 
 /** Legal robber destinations, including Friendly Robber protection. */
-export function robberTargetTiles(state: GameState): number[] {
+export function robberTargetTiles(state: GameState, actor: number = state.currentPlayer): number[] {
   const candidates = state.board.tiles.filter((tile) => tile.id !== state.board.robberTileId);
   if (!state.rules.friendlyRobber) return candidates.map((tile) => tile.id);
 
-  const actor = state.currentPlayer;
   const allowed = candidates.filter((tile) => tile.vertexIds.every((vertex) => {
     const building = state.buildings[vertex];
     return !building || building.owner === actor || publicVictoryPoints(state, building.owner) >= 3;

@@ -116,7 +116,7 @@ describe('trade offers', () => {
     s = applyOrThrow(s, { type: 'createTradeOffer', give: { wood: 1 }, receive: { ore: 1 }, anyCount: 0, target: 0 });
     const offer = s.tradeOffers[0];
     expect(offer.responses[0].status).toBe('pending');
-    expect(s.pending.botTradeOfferedThisTurn).toBe(true);
+    expect(s.pending.botTradeOfferedThisTurn[1]).toBe(true);
     s = applyOrThrow(s, { type: 'respondTradeOffer', offerId: offer.id, responder: 0, accepted: true });
     expect(s.tradeOffers[0].responses[0].status).toBe('accepted');
     s = applyOrThrow(s, nextBotAction(s, 1)!);
@@ -126,11 +126,59 @@ describe('trade offers', () => {
 
     s = setRes(s, 1, { wood: 1 });
     s = setRes(s, 0, { ore: 1 });
-    s = { ...s, pending: { ...s.pending, botTradeOfferedThisTurn: false } };
+    s = { ...s, pending: { ...s.pending, botTradeOfferedThisTurn: {} } };
     s = applyOrThrow(s, { type: 'createTradeOffer', give: { wood: 1 }, receive: { ore: 1 }, anyCount: 0, target: 0 });
     s = applyOrThrow(s, { type: 'respondTradeOffer', offerId: s.tradeOffers[0].id, responder: 0, accepted: false });
     s = applyOrThrow(s, nextBotAction(s, 1)!);
     expect(s.tradeOffers).toHaveLength(0);
+  });
+
+  it('keeps a bot busy with other actions instead of ending its turn while its own offer is still pending', () => {
+    let s = autoSetup(game(21));
+    s = { ...s, currentPlayer: 1, phase: 'main' };
+    s = setRes(s, 1, { wood: 1, brick: 4, wheat: 4, sheep: 4, ore: 4 });
+    s = applyOrThrow(s, { type: 'createTradeOffer', give: { wood: 1 }, receive: { ore: 1 }, anyCount: 0, target: 0 });
+    expect(s.tradeOffers[0].responses[0].status).toBe('pending');
+
+    const action = nextBotAction(s, 1);
+    expect(action).not.toBeNull();
+    expect(action!.type).not.toBe('endTurn');
+  });
+
+  it('lets a bot proactively cancel its own offer once it can no longer afford the give side', () => {
+    let s = autoSetup(game(19));
+    s = { ...s, currentPlayer: 1, phase: 'main' };
+    s = setRes(s, 1, { wood: 1 });
+    s = setRes(s, 0, {});
+    s = applyOrThrow(s, { type: 'createTradeOffer', give: { wood: 1 }, receive: { ore: 1 }, anyCount: 0, target: 0 });
+    expect(s.tradeOffers[0].responses[0].status).toBe('pending');
+
+    s = setRes(s, 1, {});
+    const action = nextBotAction(s, 1);
+    expect(action).toEqual({ type: 'cancelTradeOffer', offerId: s.tradeOffers[0].id });
+    s = applyOrThrow(s, action!);
+    expect(s.tradeOffers).toHaveLength(0);
+  });
+
+  it('does not send a speculative trade as the final action of a turn', () => {
+    let s = autoSetup(game(22));
+    s = { ...s, currentPlayer: 1, phase: 'main' };
+    s = setRes(s, 1, { ore: 1 });
+
+    expect(nextBotAction(s, 1)).toEqual({ type: 'endTurn' });
+  });
+
+  it('still offers a trade when one card immediately completes a purchase', () => {
+    let s = autoSetup(game(23));
+    s = { ...s, currentPlayer: 1, phase: 'main' };
+    s = setRes(s, 1, { wood: 2 });
+
+    expect(nextBotAction(s, 1)).toMatchObject({
+      type: 'createTradeOffer',
+      give: { wood: 1 },
+      receive: { brick: 1 },
+      target: 0,
+    });
   });
 
   it('collects bot responses while waiting, then lets the proposer trade with an accepting bot', () => {
@@ -366,12 +414,12 @@ describe('progress cards', () => {
     s = { ...s, currentPlayer: 0, phase: 'main', turn: s.turn + 1 };
 
     s = applyOrThrow(s, { type: 'playRoadBuilding' });
-    expect(s.pending.freeRoads).toBe(2);
+    expect(s.pending.freeRoads[0]).toBe(2);
     expect(reduce(s, { type: 'endTurn' }).ok).toBe(false);
 
     s = applyOrThrow(s, { type: 'buildRoad', edge: legalRoadEdges(s, 0)[0] });
     s = applyOrThrow(s, { type: 'buildRoad', edge: legalRoadEdges(s, 0)[0] });
-    expect(s.pending.freeRoads).toBe(0);
+    expect(s.pending.freeRoads[0]).toBe(0);
     expect(reduce(s, { type: 'endTurn' }).ok).toBe(true);
   });
 
@@ -383,7 +431,7 @@ describe('progress cards', () => {
     s = applyOrThrow(s, { type: 'playRoadBuilding' });
     s = applyOrThrow(s, { type: 'buildRoad', edge: legalRoadEdges(s, 0)[0] });
     expect(s.phase).toBe('roll');
-    expect(s.pending.freeRoads).toBe(1);
+    expect(s.pending.freeRoads[0]).toBe(1);
   });
 
   it('clears unusable free roads before rolling instead of deadlocking', () => {
@@ -398,9 +446,9 @@ describe('progress cards', () => {
     for (const edge of blocked) if (roads[edge] === undefined && edge !== onlyEdge) roads[edge] = edge % 2 ? 1 : 2;
     s = { ...s, roads };
     s = applyOrThrow(s, { type: 'playRoadBuilding' });
-    expect(s.pending.freeRoads).toBe(2);
+    expect(s.pending.freeRoads[0]).toBe(2);
     s = applyOrThrow(s, { type: 'buildRoad', edge: onlyEdge });
-    expect(s.pending.freeRoads).toBe(0);
+    expect(s.pending.freeRoads[0]).toBe(0);
     expect(reduce(s, { type: 'rollDice' }).ok).toBe(true);
   });
 
@@ -411,7 +459,7 @@ describe('progress cards', () => {
     const roads = { ...s.roads };
     for (const edge of legalRoadEdges(s, 0)) roads[edge] = edge % 2 ? 1 : 2;
     s = applyOrThrow({ ...s, roads }, { type: 'playRoadBuilding' });
-    expect(s.pending.freeRoads).toBe(0);
+    expect(s.pending.freeRoads[0]).toBe(0);
     expect(reduce(s, { type: 'rollDice' }).ok).toBe(true);
   });
 

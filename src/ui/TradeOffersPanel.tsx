@@ -1,8 +1,9 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { CARD_HIDDEN, RESOURCE_CARD } from '../assets';
 import type { GameState, Resource, TradeOffer } from '../engine/types';
 import { RESOURCES } from '../engine/types';
 import { canAfford } from '../engine/helpers';
+import { isConcurrentPhase } from '../engine/modes';
 import { PLAYER_CSS } from '../render/palette';
 import { useGame } from '../state/store';
 import { StackedCard } from './StackedCard';
@@ -11,37 +12,42 @@ export function TradeOffersPanel({ game }: { game: GameState }) {
   const humanId = useGame((state) => state.humanId);
   const dispatch = useGame((state) => state.dispatch);
   const offers = game.tradeOffers.filter((offer) => offer.proposer === humanId || (offer.target === humanId && offer.responses[humanId]?.status === 'pending'));
-  const canManage = game.currentPlayer === humanId && game.phase === 'main';
+  const canManage = isConcurrentPhase(game) ? !game.pending.passed[humanId] : game.currentPlayer === humanId && game.phase === 'main';
+  const canRespond = game.phase === 'main' || isConcurrentPhase(game);
+  const respondToOffer = useCallback((offerId: number, accepted: boolean) => {
+    dispatch({ type: 'respondTradeOffer', offerId, responder: humanId, accepted });
+  }, [dispatch, humanId]);
   if (!offers.length) return null;
   return (
     <aside className="trade-offers-rail pointer-events-auto absolute top-16 z-20 w-72 sm:top-[4.5rem]">
       <div className="max-h-[calc(100vh-10rem)] space-y-3 overflow-y-auto px-0.5">
         {offers.map((offer) => offer.target === humanId ? (
-          <IncomingOffer key={offer.id} offer={offer} game={game} humanId={humanId} onRespond={(accepted) => dispatch({ type: 'respondTradeOffer', offerId: offer.id, responder: humanId, accepted })} />
+          <IncomingOffer key={offer.id} offer={offer} game={game} humanId={humanId} canRespond={canRespond} onRespond={respondToOffer} />
         ) : (
-          <OutgoingOffer key={offer.id} offer={offer} game={game} canManage={canManage} onChoose={(partner) => dispatch({ type: 'completeTradeOffer', offerId: offer.id, partner })} onCancel={() => dispatch({ type: 'cancelTradeOffer', offerId: offer.id })} />
+          <OutgoingOffer key={offer.id} offer={offer} game={game} canManage={canManage} onChoose={(partner) => dispatch({ type: 'completeTradeOffer', offerId: offer.id, partner, player: humanId })} onCancel={() => dispatch({ type: 'cancelTradeOffer', offerId: offer.id, player: humanId })} />
         ))}
       </div>
     </aside>
   );
 }
 
-function IncomingOffer({ offer, game, humanId, onRespond }: { offer: TradeOffer; game: GameState; humanId: number; onRespond: (accepted: boolean) => void }) {
+function IncomingOffer({ offer, game, humanId, canRespond, onRespond }: { offer: TradeOffer; game: GameState; humanId: number; canRespond: boolean; onRespond: (offerId: number, accepted: boolean) => void }) {
   const [remaining, setRemaining] = useState<number>(game.rules.turnTimer);
   const proposer = game.players[offer.proposer];
   const canAccept = canAfford(game.players[humanId].resources, offer.receive);
   useEffect(() => {
+    if (!canRespond) return;
     setRemaining(game.rules.turnTimer);
     const started = Date.now();
     const interval = setInterval(() => {
       const next = Math.max(0, game.rules.turnTimer - Math.floor((Date.now() - started) / 1000));
       setRemaining(next);
-      if (next === 0) { clearInterval(interval); onRespond(false); }
-    }, 250);
+      if (next === 0) { clearInterval(interval); onRespond(offer.id, false); }
+    }, 1000);
     return () => clearInterval(interval);
-  }, [offer.id, game.rules.turnTimer, onRespond]);
+  }, [offer.id, game.rules.turnTimer, canRespond, onRespond]);
   return (
-    <section className="rounded-2xl bg-card/95 p-3 text-ink shadow-panel ring-2 backdrop-blur-sm" style={{ borderColor: PLAYER_CSS[proposer.color], boxShadow: `0 8px 24px -8px ${PLAYER_CSS[proposer.color]}88` }}>
+    <section className="rounded-2xl bg-card p-3 text-ink shadow-panel ring-2" style={{ borderColor: PLAYER_CSS[proposer.color], boxShadow: `0 8px 24px -8px ${PLAYER_CSS[proposer.color]}88` }}>
       <div className="mb-2 flex items-center gap-2">
         <span className="flex h-8 w-8 items-center justify-center rounded-xl text-lg" style={{ background: `${PLAYER_CSS[proposer.color]}35` }}>🤖</span>
         <span className="font-display text-sm font-extrabold">{proposer.name} offers</span>
@@ -58,8 +64,8 @@ function IncomingOffer({ offer, game, humanId, onRespond }: { offer: TradeOffer;
         })}
       </div>
       <div className="mt-2.5 grid grid-cols-2 gap-2">
-        <button onClick={() => onRespond(false)} className="rounded-xl bg-card-alt px-3 py-2 text-sm font-extrabold text-p-red transition hover:brightness-95">Decline</button>
-        <button disabled={!canAccept} onClick={() => onRespond(true)} className="rounded-xl bg-p-green px-3 py-2 text-sm font-extrabold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-card-alt disabled:text-ink-faint">Accept</button>
+        <button disabled={!canRespond} onClick={() => onRespond(offer.id, false)} className="rounded-xl bg-card-alt px-3 py-2 text-sm font-extrabold text-p-red transition hover:brightness-95 disabled:cursor-not-allowed disabled:text-ink-faint">Decline</button>
+        <button disabled={!canRespond || !canAccept} onClick={() => onRespond(offer.id, true)} className="rounded-xl bg-p-green px-3 py-2 text-sm font-extrabold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-card-alt disabled:text-ink-faint">Accept</button>
       </div>
       <span className="sr-only">You give the cards on the left and receive the cards on the right. Player {humanId} must respond.</span>
     </section>
@@ -68,7 +74,7 @@ function IncomingOffer({ offer, game, humanId, onRespond }: { offer: TradeOffer;
 
 function OutgoingOffer({ offer, game, canManage, onChoose, onCancel }: { offer: TradeOffer; game: GameState; canManage: boolean; onChoose: (partner: number) => void; onCancel: () => void }) {
   return (
-    <section className="rounded-2xl bg-card/95 p-2.5 text-ink shadow-panel ring-1 ring-ink/10 backdrop-blur-sm dark:ring-white/15">
+    <section className="rounded-2xl bg-card p-2.5 text-ink shadow-panel ring-1 ring-ink/10 dark:ring-white/15">
       <div className="flex items-stretch gap-1.5"><TradeSide><TradeCards bag={offer.give} /></TradeSide><span className="flex w-6 items-center justify-center text-ink-faint">→</span><TradeSide><TradeCards bag={offer.receive} anyCount={offer.anyCount} /></TradeSide></div>
       <div className="mt-2.5 border-t border-ink/10 pt-2 dark:border-white/10">
         <p className="mb-1.5 text-[9px] font-extrabold uppercase tracking-[0.14em] text-ink-faint">Responses</p>
