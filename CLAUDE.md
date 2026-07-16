@@ -11,14 +11,45 @@ built so that **online multiplayer can be added later without rewriting the game
 > IP note: this is an original implementation of the *mechanics* with its own art and
 > naming. Do not add official Catan® assets, names, or trademarks.
 
+## Monorepo layout (online update)
+
+The repo is an **npm workspaces monorepo**. The pure engine was extracted so the client
+and the authoritative server share it verbatim:
+
+```
+packages/
+  shared/   @colonist/shared — the pure engine + AI + net protocol (redaction). No UI.
+  client/   React + Vite + Pixi front-end (local vs-bots AND online play).
+  server/   Node + Socket.IO + Prisma authoritative server (rooms, auth, bots, history).
+```
+
+- `shared` is imported by both `client` and `server` (as `@colonist/shared`). Engine
+  purity still applies — nothing UI/network-specific in `packages/shared/src/engine`.
+- Redaction + the client↔server wire types live in `packages/shared/src/net/protocol.ts`
+  (`redactState`, `handSize`/`unplayedDevCount`/`devDeckSize` accessors that work on both
+  raw local state and redacted online state).
+- Online is server-authoritative: the client sends `Action`s, the server runs `reduce`,
+  and broadcasts a per-seat **redacted** state. Bots run on the server. See the roadmap
+  section at the bottom (now largely implemented) and the plan file for details.
+
 ## Commands
 
 ```bash
-npm run dev      # Vite dev server → http://localhost:5173
-npm run build    # tsc --noEmit + vite build (production)
-npm run test     # Vitest: engine unit tests + full-game simulations
+npm run dev      # client Vite dev server → http://localhost:5173
+npm run build    # build the client (tsc --noEmit + vite build)
+npm run server   # run the authoritative server (packages/server, tsx watch)
+npm run test     # shared engine + client tests
 npm run lint     # eslint
+
+# Per-workspace, e.g.:
+npm run test  --workspace @colonist/server     # server runtime/anti-cheat tests
+npm run prisma:migrate --workspace @colonist/server   # create/apply DB migrations
 ```
+
+Copy `packages/server/.env.example` → `.env` and `packages/client/.env.example` → `.env`.
+Local (vs-bots) play needs no env; **online** needs Auth0 vars + a Postgres `DATABASE_URL`.
+For local online testing without Auth0, set `DEV_NO_AUTH=true` on the server (tokens are
+then `"userId:name"`, never use in production).
 
 - Node 22, npm 10.
 - After editing **`tailwind.config.js`**, restart the dev server. Tailwind's JIT in a

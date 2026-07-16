@@ -1,0 +1,56 @@
+// Prisma schema for profiles + match history.
+// Generate the client with `npm run prisma:generate -w @colonist/server`.
+// Create/apply migrations with `npm run prisma:migrate -w @colonist/server`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String       @id @default(cuid())
+  auth0Sub  String       @unique
+  name      String
+  createdAt DateTime     @default(now())
+  wins      Game[]       @relation("winner")
+  players   GamePlayer[]
+}
+
+model Game {
+  id        String       @id @default(cuid())
+  seed      Int
+  layout    String
+  winner    User?        @relation("winner", fields: [winnerId], references: [id])
+  winnerId  String?
+  startedAt DateTime
+  endedAt   DateTime     @default(now())
+  players   GamePlayer[]
+  events    GameEvent[]
+}
+
+model GamePlayer {
+  id      String  @id @default(cuid())
+  game    Game    @relation(fields: [gameId], references: [id])
+  gameId  String
+  user    User?   @relation(fields: [userId], references: [id])
+  userId  String?
+  seat    Int
+  name    String
+  isBot   Boolean
+  finalVp Int
+}
+
+// TODO: full move history / replay. Every accepted action can be appended here
+// (seed + ordered actions fully reproduce a game thanks to the deterministic
+// engine). Left unpopulated in v1; wire it up in the action handler when ready.
+model GameEvent {
+  id     String @id @default(cuid())
+  game   Game   @relation(fields: [gameId], references: [id])
+  gameId String
+  seq    Int
+  action Json
+}
