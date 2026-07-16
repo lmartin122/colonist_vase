@@ -8,7 +8,11 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // Supabase + Prisma: DATABASE_URL = Transaction pooler (6543, pgbouncer),
+  // DIRECT_URL = Session pooler (5432) used for migrations. Copy both from
+  // Supabase → Connect → ORM → Prisma.
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
