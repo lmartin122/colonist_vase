@@ -1,15 +1,21 @@
 import { create } from 'zustand';
 
-// A stable per-browser dev identity, persisted so reconnection keeps your seat.
+// A per-TAB dev identity. We deliberately use sessionStorage (not localStorage)
+// so two tabs/windows of the SAME browser are two DISTINCT players — which is
+// exactly what you want for local multiplayer testing. sessionStorage survives a
+// refresh of the same tab (so reconnection keeps your seat) but is isolated per
+// tab, unlike localStorage which is shared across tabs/incognito windows.
 const KEY_ID = 'cv-dev-id';
 const KEY_NAME = 'cv-dev-name';
 
+const store = typeof sessionStorage === 'undefined' ? null : sessionStorage;
+
 function loadId(): string {
-  if (typeof localStorage === 'undefined') return 'u000000';
-  let id = localStorage.getItem(KEY_ID);
+  if (!store) return 'u000000';
+  let id = store.getItem(KEY_ID);
   if (!id) {
     id = 'u' + Math.random().toString(36).slice(2, 8);
-    localStorage.setItem(KEY_ID, id);
+    store.setItem(KEY_ID, id);
   }
   return id;
 }
@@ -23,13 +29,13 @@ interface DevAuthState {
 
 export const useDevAuth = create<DevAuthState>((set) => ({
   id: loadId(),
-  name: typeof localStorage === 'undefined' ? null : localStorage.getItem(KEY_NAME),
+  name: store?.getItem(KEY_NAME) ?? null,
   setName(name) {
-    localStorage.setItem(KEY_NAME, name);
+    store?.setItem(KEY_NAME, name);
     set({ name });
   },
   clear() {
-    localStorage.removeItem(KEY_NAME);
+    store?.removeItem(KEY_NAME);
     set({ name: null });
   },
 }));

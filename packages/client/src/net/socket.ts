@@ -31,8 +31,10 @@ export function disconnectSocket(): void {
 function request<T>(event: keyof ClientToServerEvents, ...args: unknown[]): Promise<Result<T>> {
   return new Promise((resolve) => {
     if (!socket) return resolve({ ok: false, error: 'Not connected to the server' });
-    const emit = socket.emit as unknown as (e: string, ...a: unknown[]) => void;
-    emit(event, ...args, (res: Result<T>) => resolve(res ?? { ok: false, error: 'No response from server' }));
+    const ack = (res: Result<T>) => resolve(res ?? { ok: false, error: 'No response from server' });
+    // Call through `socket` so Socket.IO keeps its `this` binding (a detached
+    // `socket.emit` reference throws "Cannot read properties of undefined (_opts)").
+    (socket.emit as (e: string, ...a: unknown[]) => void).call(socket, event, ...args, ack);
   });
 }
 

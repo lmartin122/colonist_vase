@@ -33,7 +33,6 @@ export const useOnline = create<OnlineState>((set, get) => ({
   error: null,
 
   connect(token) {
-    set({ status: 'connecting' });
     const socket = connectSocket(token);
     // Rebind cleanly so repeated connect() calls don't stack listeners.
     socket.off();
@@ -51,6 +50,11 @@ export const useOnline = create<OnlineState>((set, get) => ({
     socket.on('gameState', ({ state, yourSeat }) => useGame.getState().applyServerState(state, yourSeat));
     socket.on('gameOver', (payload) => set({ gameOver: payload }));
     socket.on('errorMsg', ({ message }) => set({ error: message }));
+
+    // Reconcile immediately: if the socket was ALREADY connected when we
+    // (re)bound handlers — e.g. React StrictMode's double-invoke in dev — the
+    // 'connect' event won't fire again, so set the status here.
+    set({ status: socket.connected ? 'connected' : 'connecting' });
   },
 
   disconnect() {
