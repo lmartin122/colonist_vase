@@ -84,7 +84,8 @@ io.use(async (socket, next) => {
     socket.data.name = identity.name;
     void upsertUser(identity.userId, identity.name);
     next();
-  } catch {
+  } catch (err) {
+    console.warn('[auth] socket rejected:', (err as Error).message, '| devNoAuth:', config.devNoAuth, '| domain set:', Boolean(config.auth.domain), '| audience:', config.auth.audience || '(none)');
     next(new Error('unauthorized'));
   }
 });

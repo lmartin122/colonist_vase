@@ -9,4 +9,6 @@ export const AUTH_CONFIGURED = Boolean(
  */
 export const DEV_LOGIN = import.meta.env.VITE_DEV_LOGIN === 'true';
 
-export const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'http://localhost:3001';
+// Strip any trailing slash so `${SERVER_URL}/me/games` never becomes a double
+// slash (Socket.IO tolerates it, but Express 404s on the doubled path).
+export const SERVER_URL = (import.meta.env.VITE_SERVER_URL ?? 'http://localhost:3001').replace(/\/+$/, '');

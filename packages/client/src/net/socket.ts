@@ -1,7 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import type { Action, BotDifficulty, ClientToServerEvents, GameRules, Result, ServerToClientEvents } from '@colonist/shared';
-
-const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'http://localhost:3001';
+import { SERVER_URL } from '../auth/config';
 
 export type GameSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
