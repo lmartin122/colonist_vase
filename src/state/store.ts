@@ -7,6 +7,7 @@ import { reduce } from '../engine/reduce';
 import type { GameState } from '../engine/types';
 import { deriveFlights, emitFlights } from './flights';
 import { deriveSounds, playSound, playSounds } from './sounds';
+import { recordAbandonedGame, recordCompletedGame } from './profileStats';
 
 /** What the human is currently placing on the board (drives board highlights). */
 export type BuildMode =
@@ -125,9 +126,15 @@ function simulationAction(game: GameState, humanId: number): Action | null {
 }
 
 export const useGame = create<Store>((set, get) => {
-  const timingFor = (game: GameState) => ({
-    matchEndedAt: game.phase === 'gameOver' ? get().matchEndedAt ?? Date.now() : null,
-  });
+  const timingFor = (game: GameState) => {
+    if (game.phase !== 'gameOver') return { matchEndedAt: null };
+    const endedAt = get().matchEndedAt ?? Date.now();
+    const previous = get().game;
+    if (previous?.phase !== 'gameOver') {
+      recordCompletedGame(game, get().humanId, endedAt - (get().matchStartedAt ?? endedAt));
+    }
+    return { matchEndedAt: endedAt };
+  };
 
   async function runBots() {
     if (botRunning) return;
@@ -212,6 +219,11 @@ export const useGame = create<Store>((set, get) => {
     },
 
     abandonGame() {
+      const { game, humanId, matchStartedAt } = get();
+      if (game && game.phase !== 'gameOver') {
+        const endedAt = Date.now();
+        recordAbandonedGame(game, humanId, endedAt - (matchStartedAt ?? endedAt));
+      }
       set({ game: null, build: null, thinking: false, error: null, debugInfiniteTimer: null, matchStartedAt: null, matchEndedAt: null });
     },
 

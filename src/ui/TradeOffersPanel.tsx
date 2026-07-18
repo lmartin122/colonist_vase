@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { CARD_HIDDEN, RESOURCE_CARD } from '../assets';
-import type { GameState, Resource, TradeOffer } from '../engine/types';
+import { CARD_HIDDEN, RESOURCE_CARD_FRAME } from '../assets';
+import type { GameState, Player, Resource, TradeOffer } from '../engine/types';
 import { RESOURCES } from '../engine/types';
 import { canAfford } from '../engine/helpers';
 import { isConcurrentPhase } from '../engine/modes';
 import { PLAYER_CSS } from '../render/palette';
 import { useGame } from '../state/store';
 import { StackedCard } from './StackedCard';
+import { PlayerScorePortrait } from './PlayerDecorations';
 
 export function TradeOffersPanel({ game }: { game: GameState }) {
   const humanId = useGame((state) => state.humanId);
@@ -19,8 +20,8 @@ export function TradeOffersPanel({ game }: { game: GameState }) {
   }, [dispatch, humanId]);
   if (!offers.length) return null;
   return (
-    <aside className="trade-offers-rail pointer-events-auto absolute top-16 z-20 w-72 sm:top-[4.5rem]">
-      <div className="max-h-[calc(100vh-10rem)] space-y-3 overflow-y-auto px-0.5">
+    <aside className="trade-offers-rail pointer-events-auto absolute top-16 z-20 w-72 sm:top-[4.5rem] xl:top-3">
+      <div className="max-h-[calc(100vh-10rem)] space-y-3 overflow-y-auto px-0.5 xl:max-h-[calc(100vh-1.5rem)]">
         {offers.map((offer) => offer.target === humanId ? (
           <IncomingOffer key={offer.id} offer={offer} game={game} humanId={humanId} canRespond={canRespond} onRespond={respondToOffer} />
         ) : (
@@ -49,8 +50,8 @@ function IncomingOffer({ offer, game, humanId, canRespond, onRespond }: { offer:
   return (
     <section className="rounded-2xl bg-card p-3 text-ink shadow-panel ring-2" style={{ borderColor: PLAYER_CSS[proposer.color], boxShadow: `0 8px 24px -8px ${PLAYER_CSS[proposer.color]}88` }}>
       <div className="mb-2 flex items-center gap-2">
-        <span className="flex h-8 w-8 items-center justify-center rounded-xl text-lg" style={{ background: `${PLAYER_CSS[proposer.color]}35` }}>🤖</span>
-        <span className="font-display text-sm font-extrabold">{proposer.name} offers</span>
+        <PlayerScorePortrait player={proposer} points={0} showName={false} showRibbon={false} className="h-12 w-12" />
+        <span className="font-display text-sm font-extrabold">Trade offer</span>
         <span className={`ml-auto rounded-lg px-2 py-1 text-xs font-extrabold ${remaining <= 5 ? 'bg-p-red text-white' : 'bg-card-alt text-ink'}`}>{remaining}s</span>
       </div>
       <div className="flex items-stretch gap-1.5">
@@ -59,8 +60,8 @@ function IncomingOffer({ offer, game, humanId, canRespond, onRespond }: { offer:
       <div className="mt-2 flex items-center gap-1.5 border-t border-ink/10 pt-2 dark:border-white/10">
         <span className="mr-1 text-[9px] font-extrabold uppercase tracking-wide text-ink-faint">Others</span>
         {Object.entries(offer.responses).filter(([playerId]) => Number(playerId) !== humanId).map(([playerId, response]) => {
-          const player = game.players[Number(playerId)]; const color = PLAYER_CSS[player.color];
-          return <span key={playerId} title={`${player.name} ${response.status}`} className="relative flex h-8 w-8 items-center justify-center rounded-lg text-xs font-extrabold" style={{ color: response.status === 'accepted' ? 'white' : color, background: response.status === 'accepted' ? `${color}d9` : `${color}25`, boxShadow: `inset 0 0 0 2px ${color}88` }}>{response.status === 'accepted' ? '✓' : '×'}</span>;
+          const player = game.players[Number(playerId)];
+          return <span key={playerId} aria-label={`${response.status} response`} className="flex min-h-12 min-w-12 items-center justify-center"><TradeResponseDecoration player={player} status={response.status} /></span>;
         })}
       </div>
       <div className="mt-2.5 grid grid-cols-2 gap-2">
@@ -80,9 +81,9 @@ function OutgoingOffer({ offer, game, canManage, onChoose, onCancel }: { offer: 
         <p className="mb-1.5 text-[9px] font-extrabold uppercase tracking-[0.14em] text-ink-faint">Responses</p>
         <div className="flex flex-wrap gap-1.5">
           {Object.entries(offer.responses).map(([playerId, response]) => {
-            const id = Number(playerId); const player = game.players[id]; const color = PLAYER_CSS[player.color];
-            return response.status === 'accepted' ? <button key={id} disabled={!canManage} onClick={() => onChoose(id)} title={`${player.name} accepts`} className="relative flex h-10 w-10 items-center justify-center rounded-xl text-white" style={{ background: `${color}d9`, boxShadow: `inset 0 0 0 2px ${color}` }}>✓</button>
-              : <span key={id} title={`${player.name} declined`} className="relative flex h-10 w-10 items-center justify-center rounded-xl font-extrabold" style={{ background: `${color}2b`, color, boxShadow: `inset 0 0 0 2px ${color}88` }}>×</span>;
+            const id = Number(playerId); const player = game.players[id];
+            return response.status === 'accepted' ? <button key={id} disabled={!canManage} onClick={() => onChoose(id)} aria-label="Choose accepted trade" className="flex h-12 w-12 items-center justify-center rounded-xl"><TradeResponseDecoration player={player} status={response.status} /></button>
+              : <span key={id} aria-label={`${response.status} trade`} className="flex h-12 w-12 items-center justify-center"><TradeResponseDecoration player={player} status={response.status} /></span>;
           })}
           {canManage && <button onClick={onCancel} title="Cancel offer" className="ml-auto flex h-10 w-10 items-center justify-center rounded-xl bg-p-red text-lg font-extrabold text-white">×</button>}
         </div>
@@ -92,7 +93,21 @@ function OutgoingOffer({ offer, game, canManage, onChoose, onCancel }: { offer: 
 }
 
 function TradeSide({ children }: { children: ReactNode }) { return <div className="min-w-0 flex-1 rounded-xl bg-card-alt/80 px-1.5 py-1">{children}</div>; }
+
+function TradeResponseDecoration({ player, status }: { player: Player; status: 'pending' | 'accepted' | 'declined' }) {
+  return (
+    <span className="relative block h-12 w-12">
+      <PlayerScorePortrait player={player} points={0} showName={false} showRibbon={false} className="h-12 w-12" />
+      {status !== 'pending' && (
+        <span className={`absolute inset-1 z-40 flex items-center justify-center rounded-full text-2xl font-black ring-2 ${status === 'accepted' ? 'bg-p-green/20 text-p-green ring-p-green/60' : 'bg-p-red/20 text-p-red ring-p-red/60'}`} aria-hidden="true">
+          {status === 'accepted' ? '✓' : '×'}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function TradeCards({ bag, anyCount = 0 }: { bag: Partial<Record<Resource, number>>; anyCount?: number }) {
   const entries = RESOURCES.filter((resource) => (bag[resource] ?? 0) > 0);
-  return <div className="flex min-h-8 items-center gap-1">{entries.map((resource) => <StackedCard key={resource} src={RESOURCE_CARD[resource]} alt={resource} count={bag[resource] ?? 0} direction="left" cardWidth={24} cardHeight={32} overlap={4} />)}{anyCount > 0 && <StackedCard src={CARD_HIDDEN} alt="Any card" count={anyCount} direction="left" cardWidth={24} cardHeight={32} overlap={4} />}</div>;
+  return <div className="flex min-h-8 items-center gap-1">{entries.map((resource) => <StackedCard key={resource} sprite={RESOURCE_CARD_FRAME[resource]} alt={resource} count={bag[resource] ?? 0} direction="left" cardWidth={24} cardHeight={32} overlap={4} />)}{anyCount > 0 && <StackedCard src={CARD_HIDDEN} alt="Any card" count={anyCount} direction="left" cardWidth={24} cardHeight={32} overlap={4} />}</div>;
 }

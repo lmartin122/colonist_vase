@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CARD_DEV_BACK, RESOURCE_CARD } from '../assets';
+import { CARD_DEV_BACK_FRAME, RESOURCE_CARD_FRAME } from '../assets';
 import { tileClientPos } from '../render/boardAnchors';
 import { onFlight, type Anchor, type Flight } from '../state/flights';
+import { PackedSprite } from './PackedSprite';
+import { useReducedMotionPreference } from '../state/useMotionPreference';
 
 /**
  * Full-screen overlay that animates resource cards flying between the board,
@@ -45,8 +47,13 @@ function anchorPos(a: Anchor): { x: number; y: number } | null {
 
 export function CardFlights() {
   const [live, setLive] = useState<Live[]>([]);
+  const reducedMotion = useReducedMotionPreference();
 
   useEffect(() => {
+    if (reducedMotion) {
+      setLive([]);
+      return;
+    }
     const frames = new Set<number>();
     const unsubscribe = onFlight((f) => {
       // Let React commit the updated resource pile before resolving its center.
@@ -65,7 +72,7 @@ export function CardFlights() {
       unsubscribe();
       frames.forEach(cancelAnimationFrame);
     };
-  }, []);
+  }, [reducedMotion]);
 
   return (
     <div data-card-flights className="pointer-events-none fixed inset-0 z-[70] overflow-hidden">
@@ -79,10 +86,8 @@ export function CardFlights() {
             transition={{ duration: DURATION, delay: f.delay, ease: [0.22, 0.61, 0.36, 1] }}
             style={{ position: 'absolute', left: 0, top: 0, width: CARD_W }}
           >
-            <img
-              src={f.resource ? RESOURCE_CARD[f.resource] : CARD_DEV_BACK}
-              alt=""
-              draggable={false}
+            <PackedSprite
+              name={f.resource ? RESOURCE_CARD_FRAME[f.resource] : CARD_DEV_BACK_FRAME}
               className="w-full rounded-[4px] shadow-lg ring-1 ring-black/15"
             />
           </motion.div>

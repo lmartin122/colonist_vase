@@ -20,7 +20,7 @@ import {
 } from './helpers';
 import { hasConcurrentTurns, isConcurrentPhase } from './modes';
 import { connectedByRoad, legalRoadEdges, robberTargetTiles, roadConnects, settlementSpotOpen, stealableOpponents } from './placement';
-import type { DevCardType, GameState, Player, Resource, ResourceBank, TradeOfferResponse } from './types';
+import type { DevCardType, GameState, LogEntryDetails, Player, Resource, ResourceBank, ResourceBundle, TradeOfferResponse } from './types';
 import { RESOURCES } from './types';
 
 /**
@@ -169,6 +169,7 @@ function rollForStart(state: GameState): GameState {
     { ...state, rng: d2.rng, dice, startingRoll: { ...state.startingRoll, rolls } },
     `${playerName(state, actor)} rolled ${dice[0] + dice[1]} for starting order`,
     actor,
+    { type: 'dice', dice, context: 'startingOrder', visibility: 'public' },
   );
 
   const waiting = state.startingRoll.contenders.filter((id) => !rolls[id]);
@@ -218,12 +219,54 @@ function withPlayer(state: GameState, id: number, fn: (p: Player) => Player): Ga
   return { ...state, players };
 }
 
-function log(state: GameState, message: string, player: number | null = state.currentPlayer): GameState {
-  return { ...state, log: [...state.log, { turn: state.turn, player, message }] };
+function log(
+  state: GameState,
+  message: string,
+  player: number | null = state.currentPlayer,
+  details?: LogEntryDetails,
+): GameState {
+  return { ...state, log: [...state.log, { turn: state.turn, player, message, ...(details ? { details } : {}) }] };
 }
 
 function playerName(state: GameState, id: number): string {
   return state.players[id].name;
+}
+
+function compactResources(resources: Partial<Record<Resource, number>>): ResourceBundle {
+  return Object.fromEntries(
+    RESOURCES.filter((resource) => (resources[resource] ?? 0) > 0)
+      .map((resource) => [resource, resources[resource]!]),
+  ) as ResourceBundle;
+}
+
+function gainedResources(before: GameState, after: GameState, player: number): ResourceBundle {
+  return compactResources(Object.fromEntries(
+    RESOURCES.map((resource) => [resource, after.players[player].resources[resource] - before.players[player].resources[resource]]),
+  ));
+}
+
+function logResourceGain(
+  state: GameState,
+  player: number,
+  resources: ResourceBundle,
+  source: Extract<LogEntryDetails, { type: 'resourceGain' }>['source'],
+): GameState {
+  const count = resourceBundleTotal(resources);
+  if (count <= 0) return state;
+  return log(
+    state,
+    `${playerName(state, player)} got ${count} resource card${count === 1 ? '' : 's'}`,
+    player,
+    { type: 'resourceGain', source, resources: compactResources(resources), visibility: 'public' },
+  );
+}
+
+function logProductionGains(before: GameState, after: GameState): GameState {
+  let next = after;
+  for (const player of after.players) {
+    next = logResourceGain(next, player.id, gainedResources(before, after, player.id), 'production');
+  }
+  return next;
 }
 
 // ---------------------------------------------------------------------------
@@ -245,7 +288,12 @@ function placeSetupSettlement(state: GameState, vertex: number): GameState {
     buildings: { ...next.buildings, [vertex]: { type: 'settlement', owner: player } },
     setup: { ...state.setup, lastSettlement: vertex },
   };
-  return log(next, `${playerName(next, player)} placed a settlement`);
+  return log(
+    next,
+    `${playerName(next, player)} placed a settlement`,
+    player,
+    { type: 'piece', piece: 'settlement', verb: 'placed', vertex, visibility: 'public' },
+  );
 }
 
 function placeSetupRoad(state: GameState, edge: number): GameState {
@@ -259,6 +307,7 @@ function placeSetupRoad(state: GameState, edge: number): GameState {
 
   const player = state.currentPlayer;
   const isSecondRound = state.setup.step >= state.players.length;
+  let setupGains: ResourceBundle = {};
 
   let next = withPlayer(state, player, (p) => ({
     ...p,
@@ -268,11 +317,19 @@ function placeSetupRoad(state: GameState, edge: number): GameState {
 
   // The second settlement grants its adjacent resources.
   if (isSecondRound) {
+    const beforeGrant = next;
     next = grantSetupResources(next, player, settlement);
+    setupGains = gainedResources(beforeGrant, next, player);
   }
 
   next = { ...next, setup: { ...state.setup, lastSettlement: null, step: state.setup.step + 1 } };
-  next = log(next, `${playerName(next, player)} placed a road`);
+  next = log(
+    next,
+    `${playerName(next, player)} placed a road`,
+    player,
+    { type: 'piece', piece: 'road', verb: 'placed', edge, visibility: 'public' },
+  );
+  next = logResourceGain(next, player, setupGains, 'setup');
   return advanceSetup(next);
 }
 
@@ -323,12 +380,18 @@ function rollDice(state: GameState): GameState {
   const sum = d1.value + d2.value;
 
   let next: GameState = { ...state, rng: d2.rng, dice, pending: { ...state.pending, hasRolled: true } };
-  next = log(next, `${playerName(next, state.currentPlayer)} rolled ${sum}`);
+  next = log(
+    next,
+    `${playerName(next, state.currentPlayer)} rolled ${sum}`,
+    state.currentPlayer,
+    { type: 'dice', dice, context: 'turn', visibility: 'public' },
+  );
 
   if (sum === 7) {
     return beginRobber(next);
   }
-  return { ...produceResources(next, sum), phase: 'main' };
+  const produced = produceResources(next, sum);
+  return { ...logProductionGains(next, produced), phase: 'main' };
 }
 
 /**
@@ -357,10 +420,16 @@ function beginRushRound(state: GameState, captain: number): GameState {
       roundCaptain: captain,
     },
   };
-  next = log(next, `Round ${next.turn} begins — rolled ${sum}`, null);
+  next = log(
+    next,
+    `Round ${next.turn} begins — rolled ${sum}`,
+    null,
+    { type: 'dice', dice, context: 'rushRound', visibility: 'public' },
+  );
 
   if (sum === 7) return beginRobber(next);
-  return { ...produceResources(next, sum), phase: 'rushRound' };
+  const produced = produceResources(next, sum);
+  return { ...logProductionGains(next, produced), phase: 'rushRound' };
 }
 
 /**
@@ -457,7 +526,12 @@ function discard(state: GameState, player: number, resources: Partial<Record<Res
   const discards = { ...next.pending.discards };
   delete discards[player];
   next = { ...next, pending: { ...next.pending, discards } };
-  next = log(next, `${playerName(next, player)} discarded ${count}`, player);
+  next = log(
+    next,
+    `${playerName(next, player)} had to discard ${count} card${count === 1 ? '' : 's'}`,
+    player,
+    { type: 'discard', resources: compactResources(resources), count, visibility: 'public' },
+  );
 
   if (Object.keys(discards).length === 0) {
     return { ...next, phase: 'moveRobber' };
@@ -497,7 +571,7 @@ function applyRobber(
   } else if (occupants.size > 0) {
     fail('Must steal from an adjacent player');
   }
-  next = log(next, `${playerName(next, actor)} moved the robber`, actor);
+  next = log(next, `${playerName(next, actor)} moved the robber`, actor, { type: 'robber', tile, visibility: 'public' });
   return { ...next, phase: nextPhase };
 }
 
@@ -510,7 +584,12 @@ function stealRandom(state: GameState, thief: number, victim: number): GameState
   let next: GameState = { ...state, rng: pick.rng };
   next = withPlayer(next, victim, (p) => ({ ...p, resources: { ...p.resources, [resource]: p.resources[resource] - 1 } }));
   next = withPlayer(next, thief, (p) => ({ ...p, resources: { ...p.resources, [resource]: p.resources[resource] + 1 } }));
-  return log(next, `${playerName(next, thief)} stole from ${playerName(next, victim)}`, thief);
+  return log(
+    next,
+    `${playerName(next, thief)} stole from ${playerName(next, victim)}`,
+    thief,
+    { type: 'steal', victim, resource, visibility: 'participants' },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -627,7 +706,9 @@ function placeRoad(state: GameState, edge: number, player: number): GameState {
   let next = withPlayer(state, player, (p) => ({ ...p, stock: { ...p.stock, roads: p.stock.roads - 1 } }));
   next = { ...next, roads: { ...next.roads, [edge]: player } };
   next = updateLongestRoad(next);
-  next = log(next, `${playerName(next, player)} built a road`, player);
+  next = log(next, `${playerName(next, player)} built a road`, player, {
+    type: 'piece', piece: 'road', verb: 'built', edge, visibility: 'public',
+  });
   return checkWin(next);
 }
 
@@ -643,7 +724,9 @@ function buildSettlement(state: GameState, vertex: number, requestedPlayer?: num
   next = { ...next, buildings: { ...next.buildings, [vertex]: { type: 'settlement', owner: player } } };
   // A new settlement can cut an opponent's road.
   next = updateLongestRoad(next);
-  next = log(next, `${playerName(next, player)} built a settlement`, player);
+  next = log(next, `${playerName(next, player)} built a settlement`, player, {
+    type: 'piece', piece: 'settlement', verb: 'built', vertex, visibility: 'public',
+  });
   return checkWin(next);
 }
 
@@ -662,7 +745,9 @@ function buildCity(state: GameState, vertex: number, requestedPlayer?: number): 
     stock: { ...p.stock, cities: p.stock.cities - 1, settlements: p.stock.settlements + 1 },
   }));
   next = { ...next, buildings: { ...next.buildings, [vertex]: { type: 'city', owner: player } } };
-  next = log(next, `${playerName(next, player)} built a city`, player);
+  next = log(next, `${playerName(next, player)} built a city`, player, {
+    type: 'piece', piece: 'city', verb: 'built', vertex, visibility: 'public',
+  });
   return checkWin(next);
 }
 
@@ -681,7 +766,12 @@ function buyDevCard(state: GameState, requestedPlayer?: number): GameState {
     ...p,
     devCards: [...p.devCards, { type: card, boughtOnTurn: next.turn, played: false }],
   }));
-  next = log(next, `${playerName(next, player)} bought a development card`, player);
+  next = log(
+    next,
+    `${playerName(next, player)} bought a development card`,
+    player,
+    { type: 'developmentCard', visibility: 'public' },
+  );
   return checkWin(next);
 }
 
@@ -739,7 +829,12 @@ function playMonopoly(state: GameState, resource: Resource, requestedPlayer?: nu
   });
   next = { ...next, players };
   next = withPlayer(next, player, (p) => ({ ...p, resources: { ...p.resources, [resource]: p.resources[resource] + taken } }));
-  return log(next, `${playerName(next, player)} monopolised ${resource} (+${taken})`, player);
+  return log(
+    next,
+    `${playerName(next, player)} monopolised ${resource} (+${taken})`,
+    player,
+    { type: 'monopoly', resource, count: taken, visibility: 'public' },
+  );
 }
 
 function playYearOfPlenty(state: GameState, resources: Resource[], requestedPlayer?: number): GameState {
@@ -759,7 +854,14 @@ function playYearOfPlenty(state: GameState, resources: Resource[], requestedPlay
     for (const r of resources) res[r] += 1;
     return { ...p, resources: res };
   });
-  return log(next, `${playerName(next, player)} played Year of Plenty`, player);
+  const gains: ResourceBundle = {};
+  for (const resource of resources) gains[resource] = (gains[resource] ?? 0) + 1;
+  return log(
+    next,
+    `${playerName(next, player)} played Year of Plenty`,
+    player,
+    { type: 'resourceGain', source: 'yearOfPlenty', resources: gains, visibility: 'public' },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -781,7 +883,15 @@ function bankTrade(state: GameState, give: Resource, receive: Resource, requeste
     resources: { ...p.resources, [give]: p.resources[give] - ratio, [receive]: p.resources[receive] + 1 },
   }));
   next = { ...next, bank: { ...next.bank, [give]: next.bank[give] + ratio, [receive]: next.bank[receive] - 1 } };
-  return log(next, `${playerName(next, player)} traded ${ratio} ${give} → 1 ${receive}`, player);
+  return log(
+    next,
+    `${playerName(next, player)} traded ${ratio} ${give} for 1 ${receive} with the bank`,
+    player,
+    {
+      type: 'trade', kind: 'bank', partner: null,
+      give: { [give]: ratio }, receive: { [receive]: 1 }, visibility: 'public',
+    },
+  );
 }
 
 function playerTrade(
@@ -809,7 +919,15 @@ function playerTrade(
     ...p,
     resources: addResources(subtractResources(p.resources, receive), give),
   }));
-  return log(next, `${playerName(next, player)} traded with ${playerName(next, partner)}`, player);
+  return log(
+    next,
+    `${playerName(next, player)} traded ${formatResources(give)} for ${formatResources(receive)} with ${playerName(next, partner)}`,
+    player,
+    {
+      type: 'trade', kind: 'player', partner,
+      give: compactResources(give), receive: compactResources(receive), visibility: 'public',
+    },
+  );
 }
 
 function createTradeOffer(
@@ -863,7 +981,19 @@ function createTradeOffer(
   }
   const offer = { id: state.nextTradeOfferId, createdTurn: state.turn, proposer, give, receive, anyCount, target, responses };
   const pending = target === null ? state.pending : { ...state.pending, botTradeOfferedThisTurn: { ...state.pending.botTradeOfferedThisTurn, [proposer]: true } };
-  return log({ ...state, pending, tradeOffers: [...state.tradeOffers, offer], nextTradeOfferId: state.nextTradeOfferId + 1 }, `${playerName(state, proposer)} proposed a trade`, proposer);
+  return log(
+    { ...state, pending, tradeOffers: [...state.tradeOffers, offer], nextTradeOfferId: state.nextTradeOfferId + 1 },
+    `${playerName(state, proposer)} proposed a trade`,
+    proposer,
+    {
+      type: 'tradeOffer',
+      give: compactResources(give),
+      receive: compactResources(receive),
+      anyCount,
+      target,
+      visibility: 'public',
+    },
+  );
 }
 
 function respondTradeOffer(state: GameState, offerId: number, responder: number, accepted: boolean, wildcardResource: Resource | null): GameState {
@@ -919,7 +1049,15 @@ function completeTradeOffer(state: GameState, offerId: number, partner: number, 
   let next = withPlayer(state, offer.proposer, (p) => ({ ...p, resources: addResources(subtractResources(p.resources, offer.give), receive) }));
   next = withPlayer(next, partner, (p) => ({ ...p, resources: addResources(subtractResources(p.resources, receive), offer.give) }));
   next = { ...next, tradeOffers: next.tradeOffers.filter((item) => item.id !== offerId) };
-  return log(next, `${playerName(next, offer.proposer)} traded ${formatResources(offer.give)} for ${formatResources(receive)} with ${playerName(next, partner)}`, proposer);
+  return log(
+    next,
+    `${playerName(next, offer.proposer)} traded ${formatResources(offer.give)} for ${formatResources(receive)} with ${playerName(next, partner)}`,
+    proposer,
+    {
+      type: 'trade', kind: 'player', partner,
+      give: compactResources(offer.give), receive: compactResources(receive), visibility: 'public',
+    },
+  );
 }
 
 function formatResources(resources: Partial<Record<Resource, number>>): string {

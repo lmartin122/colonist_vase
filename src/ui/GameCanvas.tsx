@@ -7,7 +7,12 @@ import { setTileLocator } from '../render/boardAnchors';
 import { loadBoardTextures } from '../render/textures';
 import { PLAYER_CSS } from '../render/palette';
 import { deriveInteraction } from '../state/interaction';
+import { subscribeRoadPathHover } from '../state/roadPathHover';
+import { subscribeBoardPreview } from '../state/boardPreview';
+import { subscribeBoardControl } from '../state/boardControls';
 import { useGame } from '../state/store';
+import { useReducedMotionPreference } from '../state/useMotionPreference';
+import { PlayerIcon } from './PlayerDecorations';
 
 /**
  * Hosts the PixiJS board. Owns the Application + BoardRenderer and keeps them in
@@ -19,8 +24,6 @@ export function GameCanvas() {
   const rendererRef = useRef<BoardRenderer | null>(null);
   const lastBoard = useRef<Board | null>(null);
   const [ready, setReady] = useState(false);
-  const [panned, setPanned] = useState(false);
-  const [zoomed, setZoomed] = useState(false);
   const [robberChoice, setRobberChoice] = useState<{ tile: number; action: Extract<Action, { type: 'moveRobber' | 'playKnight' }>['type']; victims: number[] } | null>(null);
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; x: number; y: number; moved: boolean } | null>(null);
 
@@ -28,11 +31,13 @@ export function GameCanvas() {
   const build = useGame((s) => s.build);
   const humanId = useGame((s) => s.humanId);
   const dispatch = useGame((s) => s.dispatch);
+  const reducedMotion = useReducedMotionPreference();
   const requestRobberVictim = useCallback((tile: number, action: 'moveRobber' | 'playKnight', victims: number[]) => {
     setRobberChoice({ tile, action, victims });
   }, []);
+  const interaction = deriveInteraction(game, build, humanId, dispatch, requestRobberVictim);
 
-  const sidebarInset = (width: number) => width >= 1024 ? 330 : width >= 768 ? 300 : 0;
+  const sidebarInset = (width: number) => width >= 1280 ? 320 : width >= 1024 ? 280 : width >= 768 ? 260 : 0;
 
   // Initialise Pixi once.
   useEffect(() => {
@@ -70,8 +75,6 @@ export function GameCanvas() {
       app.renderer.on('resize', () => {
         renderer.setRightInset(sidebarInset(instance.screen.width));
         renderer.fit();
-        setPanned(false);
-        setZoomed(false);
       });
       setReady(true);
     })();
@@ -89,10 +92,18 @@ export function GameCanvas() {
   useEffect(() => {
     const renderer = rendererRef.current;
     if (!renderer || !game) return;
-    if (lastBoard.current !== game.board) {
+    const previous = lastBoard.current;
+    // Moving the robber immutably replaces the Board wrapper but preserves its
+    // structural arrays. Rebuild only for a genuinely new/generated board so
+    // BoardRenderer can retain the robber's previous position and animate it.
+    const boardChanged = !previous
+      || previous.tiles !== game.board.tiles
+      || previous.vertices !== game.board.vertices
+      || previous.edges !== game.board.edges;
+    if (boardChanged) {
       renderer.buildBoard(game.board);
-      lastBoard.current = game.board;
     }
+    lastBoard.current = game.board;
     renderer.sync(game);
   }, [game, ready]);
 
@@ -100,8 +111,25 @@ export function GameCanvas() {
   useEffect(() => {
     const renderer = rendererRef.current;
     if (!renderer) return;
-    renderer.setInteraction(robberChoice ? null : deriveInteraction(game, build, humanId, dispatch, requestRobberVictim));
-  }, [game, build, humanId, dispatch, ready, requestRobberVictim, robberChoice]);
+    const activeInteraction = robberChoice ? null : interaction;
+    renderer.setInteraction(activeInteraction);
+  }, [interaction, ready, robberChoice]);
+
+  useEffect(() => subscribeRoadPathHover((playerId) => {
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+    if (playerId === null || !game) renderer.clearRoadPathHighlight();
+    else renderer.showPlayerLongestRoad(game, playerId);
+  }), [game, ready]);
+
+  useEffect(() => subscribeBoardPreview((preview) => {
+    const renderer = rendererRef.current;
+    if (renderer && game) renderer.setBoardPreview(game, preview);
+  }), [game, ready]);
+
+  useEffect(() => {
+    rendererRef.current?.setReducedMotion(reducedMotion);
+  }, [ready, reducedMotion]);
 
   const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
@@ -129,7 +157,6 @@ export function GameCanvas() {
     drag.y = event.clientY;
     if (Math.abs(dx) + Math.abs(dy) === 0) return;
     rendererRef.current?.panByClient(dx, dy);
-    setPanned(true);
   };
   const endPan = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (dragRef.current?.pointerId !== event.pointerId) return;
@@ -138,17 +165,20 @@ export function GameCanvas() {
   };
   const recenter = () => {
     rendererRef.current?.fit();
-    setPanned(false);
-    setZoomed(false);
   };
   const zoom = (factor: number) => {
     rendererRef.current?.zoomBy(factor);
-    setZoomed(true);
   };
   const zoomWithWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
     event.preventDefault();
     zoom(event.deltaY < 0 ? 1.12 : 1 / 1.12);
   };
+
+  useEffect(() => subscribeBoardControl((action) => {
+    if (action === 'zoomIn') zoom(1.2);
+    else if (action === 'zoomOut') zoom(1 / 1.2);
+    else recenter();
+  }));
 
   // The canvas spans the full viewport so panned board content can travel behind HUD panels.
   // BoardRenderer still reserves the sidebar while fitting the initial board position.
@@ -163,19 +193,7 @@ export function GameCanvas() {
         onPointerCancel={endPan}
         onWheel={zoomWithWheel}
       />
-      <div className="pointer-events-auto absolute left-[6.5rem] top-3 z-10 flex gap-1.5 sm:left-28 sm:top-4">
-        <MapControl label="Zoom in" onClick={() => zoom(1.2)}>+</MapControl>
-        <MapControl label="Zoom out" onClick={() => zoom(1 / 1.2)}>−</MapControl>
-        {(panned || zoomed) && (
-          <MapControl label="Recenter board" onClick={recenter}>
-            <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current" strokeWidth="2" strokeLinecap="round">
-              <circle cx="12" cy="12" r="6" />
-              <circle cx="12" cy="12" r="1.5" className="fill-current stroke-none" />
-              <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
-            </svg>
-          </MapControl>
-        )}
-      </div>
+      {interaction && <KeyboardPlacementTargets interaction={interaction} renderer={rendererRef.current} />}
       {robberChoice && game && (
         <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center p-4">
           <div className="pointer-events-auto w-full max-w-md rounded-2xl bg-card p-4 text-ink shadow-pop ring-1 ring-black/10 dark:ring-white/15">
@@ -195,7 +213,7 @@ export function GameCanvas() {
                   className="flex min-w-24 flex-1 flex-col items-center gap-1 rounded-xl bg-card-alt px-3 py-3 text-center text-sm font-extrabold transition hover:-translate-y-0.5 hover:shadow-soft"
                 >
                   <span className="flex h-9 w-9 items-center justify-center rounded-full text-lg ring-2 ring-white" style={{ background: PLAYER_CSS[game.players[playerId].color] }}>
-                    {game.players[playerId].isBot ? '🤖' : '🎩'}
+                    <PlayerIcon isBot={game.players[playerId].isBot} className="h-7 w-7" />
                   </span>
                   <span>{game.players[playerId].name}</span>
                 </button>
@@ -209,10 +227,13 @@ export function GameCanvas() {
   );
 }
 
-function MapControl({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button type="button" onClick={onClick} aria-label={label} title={label} className="flex h-9 w-9 items-center justify-center rounded-xl bg-card text-lg font-extrabold text-ink shadow-panel ring-1 ring-black/5 transition hover:-translate-y-0.5 hover:bg-card-alt dark:ring-white/15">
-      {children}
-    </button>
-  );
+function KeyboardPlacementTargets({ interaction, renderer }: { interaction: NonNullable<ReturnType<typeof deriveInteraction>>; renderer: BoardRenderer | null }) {
+  if (!renderer) return null;
+  const targets = [
+    ...(interaction.vertices ?? []).map((id) => ({ key: `v-${id}`, label: `Place town at location ${id}`, position: renderer.vertexClientPosition(id), action: () => interaction.onVertex?.(id) })),
+    ...(interaction.cityVertices ?? []).map((id) => ({ key: `c-${id}`, label: `Upgrade town at location ${id}`, position: renderer.vertexClientPosition(id), action: () => interaction.onVertex?.(id) })),
+    ...(interaction.edges ?? []).map((id) => ({ key: `e-${id}`, label: `Place road at edge ${id}`, position: renderer.edgeClientPosition(id), action: () => interaction.onEdge?.(id) })),
+    ...(interaction.tiles ?? []).map((id) => ({ key: `t-${id}`, label: `Choose tile ${id}`, position: renderer.tileClientPosition(id), action: () => interaction.onTile?.(id) })),
+  ];
+  return <div className="pointer-events-none fixed inset-0 z-[19]">{targets.map((target) => target.position && <button key={target.key} type="button" aria-label={target.label} onClick={target.action} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); target.action(); } }} style={{ left: target.position.x - 22, top: target.position.y - 22 }} className="pointer-events-auto absolute h-11 w-11 rounded-full bg-transparent text-transparent focus-visible:bg-amber-300/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-black"><span className="sr-only">{target.label}</span></button>)}</div>;
 }

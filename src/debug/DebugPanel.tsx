@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { isConcurrentPhase } from '../engine/modes';
 import type { DevCardType } from '../engine/types';
 import { RESOURCES } from '../engine/types';
-import { RESOURCE_CARD } from '../assets';
+import { RESOURCE_CARD_FRAME } from '../assets';
 import { useGame } from '../state/store';
+import { PackedSprite } from '../ui/PackedSprite';
 
 const DEV_CARDS: { value: DevCardType; label: string }[] = [
   { value: 'knight', label: 'Knight' },
@@ -63,7 +64,7 @@ export function DebugPanel() {
                 onClick={(event) => dispatch({ type: 'debugAddResources', player: humanId, resources: { [item]: event.shiftKey ? 5 : 1 } })}
                 className="rounded-xl bg-card-alt p-1.5 transition hover:-translate-y-0.5 hover:bg-ink/10 hover:shadow-soft"
               >
-                <img src={RESOURCE_CARD[item]} alt={`Add ${item}`} className="h-12 w-9 rounded-md object-contain" draggable={false} />
+                <PackedSprite name={RESOURCE_CARD_FRAME[item]} alt={`Add ${item}`} className="h-12 w-9 rounded-md object-contain" />
               </button>
             ))}
           </div>

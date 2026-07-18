@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CARD_DEV_BACK, DEV_CARD_ART, RESOURCE_CARD, TRADE_ICON, cityAsset, diceAsset, roadAsset, settlementAsset } from '../assets';
+import { CARD_DEV_BACK_FRAME, DEV_CARD_FRAME, RESOURCE_CARD_FRAME, ROBBER_FRAME, TRADE_FRAME, cityFrame, diceAsset, roadFrame, settlementFrame } from '../assets';
 import { nextBotAction } from '../ai/bot';
 import { COSTS, VP_LARGEST_ARMY, VP_LONGEST_ROAD } from '../engine/constants';
 import { canAfford, publicVictoryPoints, totalResources, victoryPoints } from '../engine/helpers';
@@ -18,6 +19,15 @@ import { TradePanel } from './TradePanel';
 import { TradeOffersPanel } from './TradeOffersPanel';
 import { StackedCard } from './StackedCard';
 import { useRecentLogEntry } from './useRecentLogEntry';
+import { PackedSprite } from './PackedSprite';
+import { PlayerIcon, PlayerScorePortrait } from './PlayerDecorations';
+import { currentActionMessage } from './actionGuidance';
+import { MobileInfoSheet } from './MobileInfoSheet';
+import { ThemeToggle } from './ThemeToggle';
+import { SettingsPopover } from './SettingsPopover';
+import { sendBoardControl } from '../state/boardControls';
+import { useReducedMotionPreference } from '../state/useMotionPreference';
+import { clampDockHandHeight, clampDockHandPercent, DEFAULT_PANEL_LAYOUT, loadPanelLayout, savePanelLayout } from './panelLayout';
 
 type Bag = Record<Resource, number>;
 const zeroBag = emptyBank;
@@ -25,10 +35,9 @@ const zeroBag = emptyBank;
 /** A resource shown as its card art — used everywhere a resource is depicted. */
 function ResCard({ resource, size = 16 }: { resource: Resource; size?: number }) {
   return (
-    <img
-      src={RESOURCE_CARD[resource]}
+    <PackedSprite
+      name={RESOURCE_CARD_FRAME[resource]}
       alt={resource}
-      draggable={false}
       style={{ width: size }}
       className="inline-block rounded-[3px] object-contain align-middle"
     />
@@ -41,9 +50,9 @@ export function Hud() {
   return (
     <div className="pointer-events-none absolute inset-0 select-none font-sans">
       {/* Play area (left of the sidebar on md+). */}
-      <div className="absolute inset-y-0 left-0 right-0 md:right-[300px] lg:right-[330px]">
+      <div className="absolute inset-y-0 left-0 right-0 md:right-[260px] lg:right-[280px] xl:right-[320px]">
         <TopBar game={game} />
-        <AbandonButton />
+        <GameControls />
         <PhaseGuide game={game} />
         <div className="md:hidden">
           <PlayersColumn game={game} />
@@ -52,9 +61,9 @@ export function Hud() {
       </div>
       <Sidebar game={game} />
       <TradeOffersPanel game={game} />
+      <MobileInfoSheet game={game} />
       <VictoryOverlay game={game} />
       <ErrorToast />
-      <BotActionToast game={game} />
       <CardFlights />
       <SoundManager />
       <DebugPanel />
@@ -81,27 +90,6 @@ function Cost({ cost }: { cost: Partial<Record<Resource, number>> }) {
   );
 }
 
-function BotActionToast({ game }: { game: GameState }) {
-  const humanId = useGame((s) => s.humanId);
-  const entry = useRecentLogEntry(game.log, 1600);
-  const show = entry && entry.player !== null && entry.player !== humanId;
-  return (
-    <AnimatePresence>
-      {show && (
-        <motion.div
-          key={entry!.turn + entry!.message}
-          initial={{ y: -12, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="pointer-events-none absolute left-1/2 top-24 -translate-x-1/2 rounded-xl bg-ink/90 px-4 py-2 text-sm font-bold text-card shadow-pop"
-        >
-          {entry!.message}
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-}
-
 // --- Top bar ---------------------------------------------------------------
 
 function TopBar({ game }: { game: GameState }) {
@@ -109,7 +97,7 @@ function TopBar({ game }: { game: GameState }) {
   const concurrent = isConcurrentPhase(game);
   const active = game.players[game.currentPlayer];
   return (
-    <div className="absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-2 sm:top-4 sm:gap-3">
+    <div className="absolute left-1/2 top-[4.75rem] hidden -translate-x-1/2 items-center gap-2 sm:gap-3 md:flex xl:top-4">
       <div className={`flex items-center gap-2 px-3 py-2 sm:px-4 ${CARD}`}>
         {concurrent ? (
           <span className="font-display text-sm font-extrabold sm:text-base">⚡ Everyone</span>
@@ -153,6 +141,22 @@ function MatchElapsed() {
   return <span title="Match time" className="rounded-lg bg-ink/10 px-1.5 py-0.5 font-mono text-[11px] font-bold tabular-nums text-ink-soft">{formatDuration((endedAt ?? now) - startedAt)}</span>;
 }
 
+function GameControls() {
+  const controlClass = 'flex h-11 w-11 items-center justify-center rounded-xl text-lg font-extrabold text-ink transition hover:bg-ink/10 active:scale-95';
+  return (
+    <div className="pointer-events-auto absolute left-3 top-3 z-40 flex items-center gap-0.5 rounded-2xl bg-card/95 p-1 shadow-panel ring-1 ring-black/5 backdrop-blur-sm sm:top-4 dark:ring-white/15">
+      <AbandonButton />
+      <ThemeToggle embedded />
+      <button type="button" aria-label="Zoom in" title="Zoom in" onClick={() => sendBoardControl('zoomIn')} className={controlClass}>+</button>
+      <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => sendBoardControl('zoomOut')} className={controlClass}>−</button>
+      <button type="button" aria-label="Recenter board" title="Recenter board" onClick={() => sendBoardControl('recenter')} className={controlClass}>
+        <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="1.5" className="fill-current stroke-none" /><path d="M12 2v4M12 18v4M2 12h4M18 12h4" /></svg>
+      </button>
+      <SettingsPopover embedded />
+    </div>
+  );
+}
+
 function AbandonButton() {
   const abandonGame = useGame((s) => s.abandonGame);
   const [confirming, setConfirming] = useState(false);
@@ -163,14 +167,14 @@ function AbandonButton() {
         onClick={() => setConfirming(true)}
         title="Abandon game"
         aria-label="Abandon game"
-        className="pointer-events-auto absolute left-2 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-xl bg-card text-ink shadow-panel ring-1 ring-black/5 transition hover:bg-p-red hover:text-white sm:left-3 sm:top-4 dark:ring-white/15"
+        className="relative flex h-11 w-11 items-center justify-center rounded-xl text-ink transition hover:bg-p-red hover:text-white active:scale-95"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true" className="h-[18px] w-[18px] fill-none stroke-current" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h5" />
           <path d="m14 8 4 4-4 4M18 12H9" />
         </svg>
       </button>
-      <AnimatePresence>
+      {typeof document !== 'undefined' && createPortal(<AnimatePresence>
         {confirming && (
           <motion.div
             className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-4"
@@ -200,64 +204,17 @@ function AbandonButton() {
             </motion.div>
           </motion.div>
         )}
-      </AnimatePresence>
+      </AnimatePresence>, document.body)}
     </>
   );
 }
 
 function PhaseGuide({ game }: { game: GameState }) {
   const humanId = useGame((s) => s.humanId);
-  const [visibleTitle, setVisibleTitle] = useState<string | null>(null);
-  const announced = useRef(new Set<string>());
-  const gameJustStarted = (game.phase === 'roll' || isConcurrentPhase(game)) && game.turn === 1;
-  const title = gameJustStarted
-    ? 'Let the Game Begin!'
-    : game.currentPlayer !== humanId
-      ? null
-      : game.phase === 'startingRoll'
-      ? 'Roll the dice to see who starts'
-      : game.phase === 'setup'
-        ? 'Starting Placement'
-        : game.phase === 'moveRobber'
-          ? 'Place the Robber'
-        : null;
-
-  useEffect(() => {
-    if (game.phase === 'gameOver') announced.current.clear();
-  }, [game.phase]);
-
-  useEffect(() => {
-    if (!title || announced.current.has(title)) {
-      setVisibleTitle(null);
-      return;
-    }
-    setVisibleTitle(title);
-    // Defer the marker so React StrictMode's discarded effect pass cannot
-    // consume the one-time announcement before it is actually displayed.
-    const markShown = setTimeout(() => announced.current.add(title), 0);
-    const timeout = setTimeout(() => setVisibleTitle(null), 2200);
-    return () => {
-      clearTimeout(markShown);
-      clearTimeout(timeout);
-    };
-  }, [title]);
-
+  const build = useGame((s) => s.build);
+  const message = currentActionMessage(game, humanId, build);
   return (
-    <AnimatePresence mode="wait">
-      {visibleTitle && (
-        <div key={visibleTitle} className="pointer-events-none absolute inset-x-0 bottom-[112px] top-0 z-10 flex items-center justify-center">
-          <motion.div
-            key={visibleTitle}
-            initial={{ y: -10, opacity: 0, scale: 0.92 }}
-            animate={{ y: 0, opacity: 1, scale: 1 }}
-            exit={{ y: 8, opacity: 0, scale: 0.96 }}
-            className={`max-w-[calc(100%-2rem)] px-7 py-3 text-center font-display text-3xl font-extrabold sm:text-4xl ${CARD}`}
-          >
-            {visibleTitle}
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
+    <div role="status" aria-live="polite" className="pointer-events-none absolute left-1/2 top-[4.5rem] z-10 max-w-[calc(100%-7rem)] -translate-x-1/2 rounded-xl bg-card/95 px-3 py-1.5 text-center text-xs font-extrabold text-ink shadow-panel ring-1 ring-black/5 sm:top-20 sm:text-sm md:top-32 xl:top-20 dark:ring-white/10">{message}</div>
   );
 }
 
@@ -268,7 +225,7 @@ function PlayersColumn({ game }: { game: GameState }) {
   const concurrent = isConcurrentPhase(game);
   const lastEntry = useRecentLogEntry(game.log, 700);
   return (
-    <div className="absolute right-2 top-14 flex w-40 flex-col gap-2 sm:right-3 sm:top-16 sm:w-56">
+    <div className="absolute right-0 top-14 flex w-[78px] flex-col gap-px sm:right-1 sm:top-16 sm:w-[86px]">
       {game.turnOrder.map((playerId) => (
         <PlayerCard
           key={playerId}
@@ -286,8 +243,6 @@ function PlayersColumn({ game }: { game: GameState }) {
 
 function PlayerCard({ game, player, isHuman, active, passed, justActed }: { game: GameState; player: Player; isHuman: boolean; active: boolean; passed?: boolean; justActed?: boolean }) {
   const vp = isHuman ? victoryPoints(game, player.id) : publicVictoryPoints(game, player.id);
-  const cards = totalResources(player.resources);
-  const devCount = player.devCards.filter((c) => !c.played).length;
   const color = PLAYER_CSS[player.color];
   const shownDice = game.phase === 'startingRoll'
     ? game.startingRoll?.rolls[player.id] ?? null
@@ -297,36 +252,20 @@ function PlayerCard({ game, player, isHuman, active, passed, justActed }: { game
       data-player={player.id}
       animate={{ scale: justActed ? 1.03 : active ? 1 : 0.98, opacity: active ? 1 : 0.9 }}
       transition={{ duration: 0.2 }}
-      className={`relative overflow-hidden px-3 py-2 transition-shadow sm:py-2.5 ${CARD} ${active ? 'bg-card-alt' : ''} ${justActed ? 'ring-2 ring-p-green' : ''}`}
+      className={`relative flex min-h-[94px] flex-col items-center justify-center overflow-hidden rounded-l-xl bg-card/95 px-1 py-1.5 transition-shadow ${active ? 'bg-card-alt' : ''} ${justActed ? 'ring-2 ring-p-green' : ''}`}
       style={active ? { boxShadow: `0 0 0 3px ${color}, 0 8px 24px -6px rgba(20,30,40,.45)` } : undefined}
     >
-      {/* Color accent strip */}
-      <span className="absolute left-0 top-0 h-full w-1.5" style={{ background: color }} />
-      <div className="flex items-center gap-2 pl-1">
-        <span className="truncate font-display text-sm font-extrabold">{player.name}</span>
-        {player.botDifficulty && <span title={`${player.botDifficulty} bot`} className="rounded-full bg-ink/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-ink-soft">{player.botDifficulty[0]}</span>}
-        {passed === undefined
-          ? active && <span className="rounded-full bg-ink/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-ink-soft">turn</span>
-          : <span title={passed ? 'Passed / ready' : 'Still deciding'} className="text-xs">{passed ? '✅' : '⏳'}</span>}
-        <span className="ml-auto flex items-baseline gap-0.5">
-          <span className="font-display text-2xl font-extrabold leading-none" style={{ color }}>{vp}</span>
-        </span>
-      </div>
-      <div className="mt-1.5 flex items-center gap-2.5 pl-1 text-[11px] font-semibold text-ink-soft">
-        {shownDice && <PlayerDice dice={shownDice} compact />}
-        <span data-player-cards={player.id} className="inline-flex items-center gap-1" title="cards in hand">🃏 {cards}</span>
-        <span className="inline-flex items-center gap-1" title="development cards">📜 {devCount}</span>
-        <span className="inline-flex items-center gap-1" title="knights played">🛡️ {player.knightsPlayed}</span>
-        <span className="ml-auto flex gap-1">
-          {game.longestRoad.player === player.id && <Badge title="Longest Road">🛣️</Badge>}
-          {game.largestArmy.player === player.id && <Badge title="Largest Army">⚔️</Badge>}
-        </span>
-      </div>
+      <span className="absolute left-1 top-1 z-30 max-w-[40px] truncate text-left font-display text-[11px] font-bold leading-none text-ink">{player.name}</span>
+      <PlayerScorePortrait player={player} points={vp} ribbon="large" showName={false} className="mt-2 h-16 w-16" />
+      {(game.phase === 'moveRobber' || game.phase === 'discard') && game.currentPlayer === player.id && <PackedSprite name={ROBBER_FRAME} alt="Must move the robber" className="absolute left-1 top-5 h-6 w-6" />}
+      {shownDice && <div className="absolute right-0.5 top-4 scale-75"><PlayerDice dice={shownDice} compact /></div>}
+      {passed !== undefined && <span title={passed ? 'Passed / ready' : 'Still deciding'} className="absolute left-1 top-5 text-[9px]">{passed ? '✅' : '⏳'}</span>}
     </motion.div>
   );
 }
 
 function PlayerDice({ dice, compact = false }: { dice: [number, number]; compact?: boolean }) {
+  const animationsDisabled = useReducedMotionPreference();
   return (
     <div className="flex shrink-0 items-center gap-0.5" title={`Rolled ${dice[0]} + ${dice[1]} = ${dice[0] + dice[1]}`}>
       {dice.map((value, index) => (
@@ -335,8 +274,9 @@ function PlayerDice({ dice, compact = false }: { dice: [number, number]; compact
           src={diceAsset(value)}
           alt={`Die showing ${value}`}
           draggable={false}
-          initial={{ rotate: -25, scale: 0.5 }}
+          initial={animationsDisabled ? false : { rotate: -25, scale: 0.5 }}
           animate={{ rotate: 0, scale: 1 }}
+          transition={animationsDisabled ? { duration: 0 } : undefined}
           className={compact ? 'h-6 w-6 drop-shadow-sm' : 'h-8 w-8 drop-shadow-sm'}
         />
       ))}
@@ -344,11 +284,11 @@ function PlayerDice({ dice, compact = false }: { dice: [number, number]; compact
   );
 }
 
-function Badge({ children, title }: { children: React.ReactNode; title: string }) {
-  return <span title={title} className="rounded-md bg-amber-100 px-1 py-0.5 text-[11px] ring-1 ring-amber-300/60">{children}</span>;
-}
-
 // --- Bottom action dock ----------------------------------------------------
+
+function dockColumns(handPercent: number): string {
+  return `minmax(220px, ${handPercent}fr) 10px minmax(520px, ${100 - handPercent}fr)`;
+}
 
 function HumanDock({ game }: { game: GameState }) {
   const humanId = useGame((s) => s.humanId);
@@ -359,6 +299,14 @@ function HumanDock({ game }: { game: GameState }) {
   const [tradeOpen, setTradeOpen] = useState(false);
   const [tradeGive, setTradeGive] = useState<Bag>(zeroBag);
   const [devPicker, setDevPicker] = useState<null | 'monopoly' | 'yop'>(null);
+  const dockPanelsRef = useRef<HTMLDivElement>(null);
+  const actionPanelRef = useRef<HTMLDivElement>(null);
+  const [handPercent, setHandPercent] = useState(() => loadPanelLayout().handPercent);
+  const [handHeight, setHandHeight] = useState(() => loadPanelLayout().handHeight);
+  const [dockWidth, setDockWidth] = useState(0);
+  const [actionPanelHeight, setActionPanelHeight] = useState(0);
+  const liveHandPercent = useRef(handPercent);
+  const liveHandHeight = useRef(handHeight);
   const me = game.players[humanId];
   const concurrent = isConcurrentPhase(game);
   const myTurn = concurrent ? !game.pending.passed[humanId] : game.currentPlayer === humanId;
@@ -402,6 +350,17 @@ function HumanDock({ game }: { game: GameState }) {
   };
   const resetTradeCards = () => setTradeGive(zeroBag());
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (devPicker) setDevPicker(null);
+      else if (tradeOpen) closeTrade();
+      else if (build) setBuild(null);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [build, devPicker, setBuild, tradeOpen]);
+
   // --- Discard flow: select cards in-hand, confirm, or auto-drop on timeout ---
   const required = game.phase === 'discard' ? game.pending.discards[humanId] ?? 0 : 0;
   const discarding = required > 0;
@@ -409,6 +368,53 @@ function HumanDock({ game }: { game: GameState }) {
   const [sel, setSel] = useState<Bag>(zeroBag);
   const [remaining, setRemaining] = useState<number>(game.rules.turnTimer);
   const selectedTotal = RESOURCES.reduce((s, r) => s + sel[r], 0);
+
+  useEffect(() => {
+    const dock = dockPanelsRef.current;
+    const actions = actionPanelRef.current;
+    if (!dock || !actions) return;
+    const observer = new ResizeObserver(() => {
+      setDockWidth(dock.getBoundingClientRect().width);
+      setActionPanelHeight(actions.getBoundingClientRect().height);
+    });
+    observer.observe(dock);
+    observer.observe(actions);
+    return () => observer.disconnect();
+  }, []);
+
+  const resolvedHandPercent = dockWidth > 0 ? clampDockHandPercent(dockWidth, handPercent) : handPercent;
+  const resolvedHandHeight = clampDockHandHeight(window.innerHeight, handHeight, actionPanelHeight);
+
+  const resizeDock = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId) || !dockPanelsRef.current) return;
+    const bounds = dockPanelsRef.current.getBoundingClientRect();
+    liveHandPercent.current = clampDockHandPercent(bounds.width, ((event.clientX - bounds.left) / bounds.width) * 100);
+    dockPanelsRef.current.style.gridTemplateColumns = dockColumns(liveHandPercent.current);
+  };
+  const finishDockResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    setHandPercent(liveHandPercent.current);
+    savePanelLayout({ handPercent: liveHandPercent.current });
+  };
+  const resizeDockHeight = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId) || !dockPanelsRef.current) return;
+    const bounds = dockPanelsRef.current.getBoundingClientRect();
+    liveHandHeight.current = clampDockHandHeight(window.innerHeight, event.clientY - bounds.top, actionPanelRef.current?.getBoundingClientRect().height ?? 0);
+    dockPanelsRef.current.style.setProperty('--dock-hand-height', `${liveHandHeight.current}px`);
+  };
+  const finishDockHeightResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    setHandHeight(liveHandHeight.current);
+    savePanelLayout({ handHeight: liveHandHeight.current });
+  };
+  const resizeDockWithKeyboard = (direction: number) => {
+    const next = clampDockHandPercent(dockPanelsRef.current?.getBoundingClientRect().width ?? dockWidth, liveHandPercent.current + direction * 2);
+    liveHandPercent.current = next;
+    setHandPercent(next);
+    savePanelLayout({ handPercent: next });
+  };
 
   // Keep latest hand/target for the timeout closure.
   const meRef = useRef(me);
@@ -476,17 +482,82 @@ function HumanDock({ game }: { game: GameState }) {
           onClose={() => setDevPicker(null)}
         />
       )}
-      <div className="flex w-full items-stretch gap-2">
+      <div ref={dockPanelsRef} className="flex w-full flex-col items-stretch xl:grid xl:gap-0" style={{ gridTemplateColumns: dockColumns(resolvedHandPercent), '--dock-hand-height': `${resolvedHandHeight}px` } as CSSProperties}>
         {/* Resource hand — fanned cards, grouped by resource (click to discard) */}
         <div
           data-hand-panel
-          className={`flex min-h-[82px] basis-1/3 items-center gap-2 overflow-x-auto px-3 pb-2 pt-4 ${CARD} ${discarding ? 'ring-2 ring-amber-400' : ''}`}
+          className={`flex h-[var(--dock-hand-height)] min-h-[70px] w-full min-w-0 flex-none items-center gap-2 overflow-x-auto px-2 pb-2 pt-3 xl:h-auto xl:min-h-[82px] xl:flex-1 xl:px-3 xl:pt-4 ${CARD} ${discarding ? 'ring-2 ring-amber-400' : ''}`}
         >
           <ResourceHand game={game} me={me} discard={discarding ? { sel, onToggle: toggleDiscard } : undefined} tradeSelected={tradeOpen ? tradeGive : undefined} onCardClick={inMain ? addTradeCard : undefined} onDevPick={setDevPicker} />
         </div>
 
+        <div
+          role="separator"
+          tabIndex={0}
+          aria-label="Resize resource cards and build controls"
+          aria-orientation="horizontal"
+          aria-valuenow={Math.round(resolvedHandHeight)}
+          title="Drag to resize · Right-click to reset"
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={resizeDockHeight}
+          onPointerUp={finishDockHeightResize}
+          onPointerCancel={finishDockHeightResize}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            liveHandHeight.current = DEFAULT_PANEL_LAYOUT.handHeight;
+            setHandHeight(DEFAULT_PANEL_LAYOUT.handHeight);
+            savePanelLayout({ handHeight: DEFAULT_PANEL_LAYOUT.handHeight });
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+            event.preventDefault();
+            const next = clampDockHandHeight(window.innerHeight, liveHandHeight.current + (event.key === 'ArrowDown' ? 8 : -8), actionPanelRef.current?.getBoundingClientRect().height ?? actionPanelHeight);
+            liveHandHeight.current = next;
+            setHandHeight(next);
+            savePanelLayout({ handHeight: next });
+          }}
+          className="group flex h-2.5 cursor-row-resize touch-none items-center justify-center rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-p-green xl:hidden"
+        >
+          <span className="h-1 w-14 rounded-full bg-ink/20 opacity-50 transition group-hover:bg-ink/50 group-hover:opacity-100 group-active:bg-ink group-focus-visible:bg-p-green group-focus-visible:opacity-100" />
+        </div>
+
+        <div
+          role="separator"
+          tabIndex={0}
+          aria-label="Resize resource cards and build controls"
+          aria-orientation="vertical"
+          aria-valuenow={Math.round(resolvedHandPercent)}
+          title="Drag to resize · Right-click to reset"
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={resizeDock}
+          onPointerUp={finishDockResize}
+          onPointerCancel={finishDockResize}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            liveHandPercent.current = DEFAULT_PANEL_LAYOUT.handPercent;
+            setHandPercent(DEFAULT_PANEL_LAYOUT.handPercent);
+            savePanelLayout({ handPercent: DEFAULT_PANEL_LAYOUT.handPercent });
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+            event.preventDefault();
+            resizeDockWithKeyboard(event.key === 'ArrowRight' ? 1 : -1);
+          }}
+          className="group hidden cursor-col-resize touch-none items-center justify-center rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-p-green xl:flex"
+        >
+          <span className="h-12 w-1 rounded-full bg-ink/20 opacity-50 transition group-hover:bg-ink/50 group-hover:opacity-100 group-active:bg-ink group-focus-visible:bg-p-green group-focus-visible:opacity-100" />
+        </div>
+
         {/* Action menu */}
-        <div className={`relative flex basis-2/3 items-stretch justify-between gap-1.5 p-2 ${CARD}`}>
+        <div ref={actionPanelRef} className={`relative flex w-full min-w-0 shrink-0 items-stretch justify-start gap-1.5 overflow-x-auto p-1.5 xl:w-auto xl:min-w-[520px] xl:justify-between xl:overflow-visible xl:p-2 ${CARD}`}>
           {myTurn && (canStartRoll || canRoll || game.dice) && (
             <RollDiceDisplay
               dice={game.dice}
@@ -495,44 +566,48 @@ function HumanDock({ game }: { game: GameState }) {
                 : canTakeRoll ? () => dispatch({ type: 'rollDice' }) : undefined}
             />
           )}
-            <ActionButton img={TRADE_ICON} label="Trade" onClick={openTrade} disabled={!inMain} />
+            <ActionButton sprite={TRADE_FRAME} label="Trade" onClick={openTrade} disabled={!inMain} reason={!inMain ? 'Available during your action phase' : undefined} />
             <ActionButton
-              img={CARD_DEV_BACK}
+              sprite={CARD_DEV_BACK_FRAME}
               label="Dev"
               cost={COSTS.devCard}
               onClick={() => dispatch({ type: 'buyDevCard', player: humanId })}
               disabled={!inMain || !canAfford(me.resources, COSTS.devCard) || game.devDeck.length === 0}
+              reason={!inMain ? 'Available during your action phase' : game.devDeck.length === 0 ? 'The development deck is empty' : !canAfford(me.resources, COSTS.devCard) ? 'Not enough resources' : undefined}
             />
             <ActionButton
-              img={roadAsset(me.color)}
+              sprite={roadFrame(me.color)}
               label="Road"
               cost={COSTS.road}
               active={build?.kind === 'road'}
               onClick={() => toggle('road')}
               disabled={!inMain || !canAfford(me.resources, COSTS.road) || me.stock.roads === 0}
+              reason={!inMain ? 'Available during your action phase' : me.stock.roads === 0 ? 'No roads remaining' : !canAfford(me.resources, COSTS.road) ? 'Not enough resources' : undefined}
             />
             <ActionButton
-              img={settlementAsset(me.color)}
+              sprite={settlementFrame(me.color)}
               label="Town"
               cost={COSTS.settlement}
               active={build?.kind === 'settlement'}
               onClick={() => toggle('settlement')}
               disabled={!inMain || !canAfford(me.resources, COSTS.settlement) || me.stock.settlements === 0}
+              reason={!inMain ? 'Available during your action phase' : me.stock.settlements === 0 ? 'No towns remaining' : !canAfford(me.resources, COSTS.settlement) ? 'Not enough resources' : undefined}
             />
             <ActionButton
-              img={cityAsset(me.color)}
+              sprite={cityFrame(me.color)}
               label="City"
               cost={COSTS.city}
               active={build?.kind === 'city'}
               onClick={() => toggle('city')}
               disabled={!inMain || !canAfford(me.resources, COSTS.city) || me.stock.cities === 0}
+              reason={!inMain ? 'Available during your action phase' : me.stock.cities === 0 ? 'No cities remaining' : !canAfford(me.resources, COSTS.city) ? 'Not enough resources' : undefined}
             />
             <div className="mx-0.5 w-px self-stretch bg-black/10 dark:bg-white/15" />
             {canRoll || canStartRoll ? (
               <button
                 disabled={mustResolveAction}
                 onClick={() => dispatch({ type: canStartRoll ? 'rollForStart' : 'rollDice' })}
-                className={`${BTN_BASE} flex-1 px-4 text-base ${mustResolveAction ? 'bg-card-alt text-ink-faint' : 'bg-p-green text-white shadow-soft hover:-translate-y-0.5 hover:brightness-105'}`}
+                className={`${BTN_BASE} min-w-14 flex-1 px-3 text-base md:px-4 ${mustResolveAction ? 'bg-card-alt text-ink-faint' : 'bg-p-green text-white shadow-soft hover:-translate-y-0.5 hover:brightness-105'}`}
               >
                 🎲<span className="ml-1 hidden sm:inline">{canStartRoll ? 'Roll for first' : 'Roll'}</span>
               </button>
@@ -541,7 +616,7 @@ function HumanDock({ game }: { game: GameState }) {
                 disabled={!passed && mustResolveAction}
                 onClick={() => dispatch(passed ? { type: 'cancelPass', player: humanId } : { type: 'passRound', player: humanId })}
                 title={passed ? 'Change your mind and keep playing this round' : undefined}
-                className={`${BTN_BASE} flex-1 px-4 text-base ${passed ? 'bg-card-alt text-ink-soft hover:bg-ink/10' : mustResolveAction ? 'bg-card-alt text-ink-faint' : 'bg-p-green text-white shadow-soft hover:-translate-y-0.5 hover:brightness-105'}`}
+                className={`${BTN_BASE} min-w-14 flex-1 px-3 text-base md:px-4 ${passed ? 'bg-card-alt text-ink-soft hover:bg-ink/10' : mustResolveAction ? 'bg-card-alt text-ink-faint' : 'bg-p-green text-white shadow-soft hover:-translate-y-0.5 hover:brightness-105'}`}
               >
                 {passed ? 'Waiting… (tap to resume)' : <>Ready<span className="ml-1 hidden sm:inline">for next round</span></>}
               </button>
@@ -549,7 +624,7 @@ function HumanDock({ game }: { game: GameState }) {
               <button
                 disabled={!inMain || mustResolveAction}
                 onClick={() => dispatch({ type: 'endTurn' })}
-                className={`${BTN_BASE} flex-1 px-4 text-base ${inMain && !mustResolveAction ? 'bg-p-green text-white shadow-soft hover:-translate-y-0.5 hover:brightness-105' : 'bg-card-alt text-ink-faint'}`}
+                className={`${BTN_BASE} min-w-14 flex-1 px-3 text-base md:px-4 ${inMain && !mustResolveAction ? 'bg-p-green text-white shadow-soft hover:-translate-y-0.5 hover:brightness-105' : 'bg-card-alt text-ink-faint'}`}
               >
                 End<span className="ml-1 hidden sm:inline">Turn</span>
               </button>
@@ -649,6 +724,7 @@ function RoundCountdown({ game }: { game: GameState }) {
 
 function RollDiceDisplay({ dice, onRoll }: { dice: [number, number] | null; onRoll?: () => void }) {
   const faces: [number, number] = dice ?? [1, 6];
+  const animationsDisabled = useReducedMotionPreference();
   return (
     <button
       type="button"
@@ -662,11 +738,15 @@ function RollDiceDisplay({ dice, onRoll }: { dice: [number, number] | null; onRo
       {faces.map((value, index) => (
         <motion.div
           key={`${index}-${value}`}
-          initial={dice ? { rotate: -25, scale: 0.5 } : undefined}
-          animate={dice
+          initial={animationsDisabled ? false : dice ? { rotate: -25, scale: 0.5 } : undefined}
+          animate={animationsDisabled
+            ? { rotate: 0, scale: 1, y: 0 }
+            : dice
             ? { rotate: 0, scale: 1, y: 0 }
             : { rotate: index === 0 ? -8 : 8, y: index === 0 ? 1 : -1 }}
-          transition={dice
+          transition={animationsDisabled
+            ? { duration: 0 }
+            : dice
             ? { type: 'spring', stiffness: 320, damping: 17 }
             : { repeat: Infinity, repeatType: 'reverse', duration: 0.7, ease: 'easeInOut' }}
         >
@@ -719,16 +799,16 @@ function ResourceHand({ game, me, discard, tradeSelected, onCardClick, onDevPick
   return (
     <>
       {present.map((r) => (
-        discard ? <FannedStack key={r} res={r} src={RESOURCE_CARD[r]} count={me.resources[r] - (tradeSelected?.[r] ?? 0)} title={r} selected={discard.sel[r]} onToggle={(delta) => discard.onToggle(r, delta)} />
-          : <StackedCard key={r} handStackId={r} src={RESOURCE_CARD[r]} alt={r} count={me.resources[r] - (tradeSelected?.[r] ?? 0)} direction="left" maxVisible={6} overlap={7} onClick={onCardClick ? () => onCardClick(r) : undefined} />
+        discard ? <FannedStack key={r} res={r} sprite={RESOURCE_CARD_FRAME[r]} count={me.resources[r] - (tradeSelected?.[r] ?? 0)} title={r} selected={discard.sel[r]} onToggle={(delta) => discard.onToggle(r, delta)} />
+          : <StackedCard key={r} handStackId={r} sprite={RESOURCE_CARD_FRAME[r]} alt={r} count={me.resources[r] - (tradeSelected?.[r] ?? 0)} direction="left" maxVisible={6} overlap={7} onClick={onCardClick ? () => onCardClick(r) : undefined} />
       ))}
       {!discard && <DevelopmentCards game={game} me={me} onPick={onDevPick} />}
     </>
   );
 }
 
-function FannedStack({ src, count, title, res, selected = 0, onToggle, onClick }: {
-  src: string; count: number; title: string; res?: string; selected?: number; onToggle?: (delta: number) => void; onClick?: () => void;
+function FannedStack({ sprite, count, title, res, selected = 0, onToggle, onClick }: {
+  sprite: string; count: number; title: string; res?: string; selected?: number; onToggle?: (delta: number) => void; onClick?: () => void;
 }) {
   const cardW = 40;
   // Tighten the overlap as a pile grows so wide hands stay compact.
@@ -740,11 +820,9 @@ function FannedStack({ src, count, title, res, selected = 0, onToggle, onClick }
       {Array.from({ length: count }).map((_, i) => {
         const isSel = clickable && i >= count - selected;
         return (
-          <img
+          <PackedSprite
             key={i}
-            src={src}
-            alt=""
-            draggable={false}
+            name={sprite}
             onClick={onToggle ? () => onToggle(isSel ? -1 : 1) : onClick}
             className={`absolute bottom-0 rounded-[5px] shadow-sm transition-transform ${
               isSel ? 'ring-2 ring-amber-400' : 'ring-1 ring-black/10'
@@ -773,18 +851,43 @@ function randomDiscard(resources: Record<Resource, number>, count: number): Bag 
   return bag;
 }
 
-function ActionButton({ img, label, cost, onClick, disabled, active }: {
-  img: string; label: string; cost?: Partial<Record<Resource, number>>;
-  onClick: () => void; disabled?: boolean; active?: boolean;
+function ActionButton({ img, sprite, label, cost, onClick, disabled, active, reason: _reason }: {
+  img?: string; sprite?: string; label: string; cost?: Partial<Record<Resource, number>>;
+  onClick: () => void; disabled?: boolean; active?: boolean; reason?: string;
 }) {
   const title = cost ? `${label} — ${RESOURCES.filter((r) => cost[r]).map((r) => `${cost[r]} ${r}`).join(', ')}` : label;
+  const [showHeldCost, setShowHeldCost] = useState(false);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suppressClick = useRef(false);
+  const startHold = () => {
+    if (!cost || window.matchMedia('(min-width: 768px)').matches) return;
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    holdTimer.current = setTimeout(() => {
+      suppressClick.current = true;
+      setShowHeldCost(true);
+    }, 450);
+  };
+  const endHold = () => {
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    holdTimer.current = null;
+    setShowHeldCost(false);
+  };
+  useEffect(() => () => { if (holdTimer.current) clearTimeout(holdTimer.current); }, []);
   return (
+    <span className="group relative flex min-w-14 flex-1 xl:min-w-0">
     <button
       data-dock-action={label}
-      disabled={disabled}
-      onClick={onClick}
-      title={title}
-      className={`${BTN_BASE} flex-1 flex-col gap-0.5 px-2 py-1.5 ${
+      aria-disabled={disabled || undefined}
+      onClick={() => {
+        if (suppressClick.current) { suppressClick.current = false; return; }
+        if (!disabled) onClick();
+      }}
+      onPointerDown={startHold}
+      onPointerUp={endHold}
+      onPointerCancel={endHold}
+      onPointerLeave={endHold}
+      title={disabled ? undefined : title}
+      className={`${BTN_BASE} min-h-11 w-full flex-1 flex-col gap-0.5 px-2 py-1.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-p-green ${
         active
           ? 'bg-amber-300 text-amber-950 shadow-soft'
           : disabled
@@ -792,13 +895,20 @@ function ActionButton({ img, label, cost, onClick, disabled, active }: {
             : 'bg-card-alt text-ink hover:-translate-y-0.5 hover:shadow-soft'
       }`}
     >
-      <img src={img} alt="" className={`h-9 w-9 object-contain ${disabled ? 'opacity-45' : ''}`} />
+      {sprite
+        ? <PackedSprite name={sprite} className={`h-9 w-9 ${disabled ? 'opacity-45' : ''}`} />
+        : <img src={img} alt="" className={`h-9 w-9 object-contain ${disabled ? 'opacity-45' : ''}`} />}
       {cost ? (
-        <span className="leading-none"><Cost cost={cost} /></span>
+        <>
+          <span className="text-[10px] font-bold leading-none md:hidden">{label}</span>
+          <span className="hidden leading-none md:inline"><Cost cost={cost} /></span>
+        </>
       ) : (
         <span className="text-[10px] font-bold leading-none">{label}</span>
       )}
     </button>
+    {cost && showHeldCost && <span role="tooltip" className="pointer-events-none absolute bottom-[calc(100%+6px)] left-1/2 z-50 flex min-h-9 -translate-x-1/2 items-center rounded-xl bg-ink px-3 text-card shadow-pop md:hidden"><Cost cost={cost} /></span>}
+    </span>
   );
 }
 
@@ -854,7 +964,7 @@ function DevHandCard({ type, count, enabled, onClick }: { type: DevCardType; cou
   const label: Record<DevCardType, string> = {
     knight: 'Knight', roadBuilding: 'Road Building', monopoly: 'Monopoly', yearOfPlenty: 'Year of Plenty', victoryPoint: 'Victory Point',
   };
-  return <StackedCard src={DEV_CARD_ART[type]} alt={label[type]} count={count} direction="left" maxVisible={4} overlap={7} title={enabled ? `Play ${label[type]}` : label[type]} onClick={enabled ? onClick : undefined} className={enabled ? '' : 'opacity-60'} />;
+  return <StackedCard sprite={DEV_CARD_FRAME[type]} alt={label[type]} count={count} direction="left" maxVisible={4} overlap={7} title={enabled ? `Play ${label[type]}` : label[type]} onClick={enabled ? onClick : undefined} className={enabled ? '' : 'opacity-60'} />;
 }
 
 function ResourcePicker({ count, title, onPick, onClose }: { count: number; title: string; onPick: (rs: Resource[]) => void; onClose: () => void }) {
@@ -931,7 +1041,7 @@ function VictoryOverlay({ game }: { game: GameState }) {
 
 function PlayerResult({ player, rank }: { player: Player; rank?: number }) {
   const color = PLAYER_CSS[player.color];
-  return <div className="flex min-w-40 items-center gap-2">{rank !== undefined && <span className="w-5 text-center font-extrabold text-ink-faint">{rank}</span>}<span className="flex h-9 w-9 items-center justify-center rounded-full text-base ring-2" style={{ background: `${color}22`, boxShadow: `inset 0 0 0 2px ${color}` }}>{player.isBot ? '🤖' : '🎩'}</span><span className="font-display font-bold text-ink">{player.name}</span></div>;
+  return <div className="flex min-w-40 items-center gap-2">{rank !== undefined && <span className="w-5 text-center font-extrabold text-ink-faint">{rank}</span>}<span className="flex h-9 w-9 items-center justify-center rounded-full ring-2" style={{ background: `${color}22`, boxShadow: `inset 0 0 0 2px ${color}` }}><PlayerIcon isBot={player.isBot} className="h-7 w-7" /></span><span className="font-display font-bold text-ink">{player.name}</span></div>;
 }
 
 type StatColumn<T> = { label: string; title?: string; value: (row: T) => number };

@@ -12,6 +12,7 @@ export type BotDifficulty = 'easy' | 'medium' | 'hard';
 
 /** A bag of resources, keyed by resource. Missing keys read as 0 via helpers. */
 export type ResourceBank = Record<Resource, number>;
+export type ResourceBundle = Partial<Record<Resource, number>>;
 
 export function emptyBank(): ResourceBank {
   return { wood: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 };
@@ -65,7 +66,19 @@ export interface Board {
 // ---------------------------------------------------------------------------
 
 export type BuildingType = 'settlement' | 'city';
-export type PlayerColor = 'red' | 'blue' | 'orange' | 'green' | 'black';
+export type PlayerColor =
+  | 'red'
+  | 'blue'
+  | 'orange'
+  | 'green'
+  | 'black'
+  | 'bronze'
+  | 'gold'
+  | 'mysticblue'
+  | 'pink'
+  | 'purple'
+  | 'silver'
+  | 'white';
 
 export interface Building {
   type: BuildingType;
@@ -221,4 +234,73 @@ export interface LogEntry {
   turn: number;
   player: number | null;
   message: string;
+  /** Semantic data for rich history rendering; `message` remains the text fallback. */
+  details?: LogEntryDetails;
 }
+
+export type LogResourceVisibility = 'public' | 'actor' | 'participants';
+
+export type LogEntryDetails =
+  | {
+      type: 'dice';
+      dice: [number, number];
+      context: 'startingOrder' | 'turn' | 'rushRound';
+      visibility: 'public';
+    }
+  | {
+      type: 'piece';
+      piece: 'road' | 'settlement' | 'city';
+      verb: 'placed' | 'built';
+      edge?: number;
+      vertex?: number;
+      visibility: 'public';
+    }
+  | {
+      type: 'robber';
+      tile: number;
+      visibility: 'public';
+    }
+  | {
+      type: 'developmentCard';
+      visibility: 'public';
+    }
+  | {
+      type: 'resourceGain';
+      source: 'production' | 'setup' | 'yearOfPlenty';
+      resources: ResourceBundle;
+      visibility: 'public';
+    }
+  | {
+      type: 'trade';
+      kind: 'player' | 'bank';
+      partner: number | null;
+      give: ResourceBundle;
+      receive: ResourceBundle;
+      visibility: 'public';
+    }
+  | {
+      type: 'tradeOffer';
+      give: ResourceBundle;
+      receive: ResourceBundle;
+      anyCount: number;
+      target: number | null;
+      visibility: 'public';
+    }
+  | {
+      type: 'discard';
+      resources: ResourceBundle;
+      count: number;
+      visibility: 'public';
+    }
+  | {
+      type: 'steal';
+      victim: number;
+      resource: Resource;
+      visibility: 'participants';
+    }
+  | {
+      type: 'monopoly';
+      resource: Resource;
+      count: number;
+      visibility: 'public';
+    };
