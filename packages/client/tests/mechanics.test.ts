@@ -9,6 +9,7 @@ import { nextBotAction } from '@colonist/shared';
 import { deriveFlights } from '../src/state/flights';
 import type { Action } from '@colonist/shared';
 import { MAX_VICTORY_POINTS } from '@colonist/shared';
+import { canRevealLogResources } from '../src/ui/history';
 
 function game(seed = 1): GameState {
   return createGame({
@@ -61,6 +62,10 @@ describe('bank trading', () => {
       expect(res.state.players[0].resources.ore).toBe(1);
       expect(res.state.players[0].stats.bankTrades).toBe(1);
       expect(res.state.players[0].stats.resourcesCollected.ore).toBeGreaterThanOrEqual(1);
+      expect(res.state.log.at(-1)?.details).toEqual({
+        type: 'trade', kind: 'bank', partner: null,
+        give: { wood: ratio }, receive: { ore: 1 }, visibility: 'public',
+      });
     }
   });
 
@@ -87,12 +92,18 @@ describe('trade offers', () => {
       anyCount: 0,
     });
     expect(s.tradeOffers).toHaveLength(1);
+    expect(s.log.at(-1)?.details).toMatchObject({
+      type: 'tradeOffer', give: { ore: 1 }, receive: { sheep: 1 }, anyCount: 0,
+    });
     expect(s.tradeOffers[0].responses[1].status).toBe('accepted');
 
     s = applyOrThrow(s, { type: 'completeTradeOffer', offerId: s.tradeOffers[0].id, partner: 1 });
     expect(s.players[0].resources).toMatchObject({ ore: 1, sheep: 1 });
     expect(s.tradeOffers).toHaveLength(0);
     expect(s.players[0].stats.tradeOffers).toBe(1);
+    expect(s.log.at(-1)?.details).toMatchObject({
+      type: 'trade', kind: 'player', partner: 1, give: { ore: 1 }, receive: { sheep: 1 },
+    });
     expect(s.players[0].stats.playerTrades).toBe(1);
     expect(s.players[1].stats.playerTrades).toBe(1);
 
@@ -116,7 +127,7 @@ describe('trade offers', () => {
     s = applyOrThrow(s, { type: 'createTradeOffer', give: { wood: 1 }, receive: { ore: 1 }, anyCount: 0, target: 0 });
     const offer = s.tradeOffers[0];
     expect(offer.responses[0].status).toBe('pending');
-    expect(s.pending.botTradeOfferedThisTurn).toBe(true);
+    expect(s.pending.botTradeOfferedThisTurn[1]).toBe(true);
     s = applyOrThrow(s, { type: 'respondTradeOffer', offerId: offer.id, responder: 0, accepted: true });
     expect(s.tradeOffers[0].responses[0].status).toBe('accepted');
     s = applyOrThrow(s, nextBotAction(s, 1)!);
@@ -126,11 +137,59 @@ describe('trade offers', () => {
 
     s = setRes(s, 1, { wood: 1 });
     s = setRes(s, 0, { ore: 1 });
-    s = { ...s, pending: { ...s.pending, botTradeOfferedThisTurn: false } };
+    s = { ...s, pending: { ...s.pending, botTradeOfferedThisTurn: {} } };
     s = applyOrThrow(s, { type: 'createTradeOffer', give: { wood: 1 }, receive: { ore: 1 }, anyCount: 0, target: 0 });
     s = applyOrThrow(s, { type: 'respondTradeOffer', offerId: s.tradeOffers[0].id, responder: 0, accepted: false });
     s = applyOrThrow(s, nextBotAction(s, 1)!);
     expect(s.tradeOffers).toHaveLength(0);
+  });
+
+  it('keeps a bot busy with other actions instead of ending its turn while its own offer is still pending', () => {
+    let s = autoSetup(game(21));
+    s = { ...s, currentPlayer: 1, phase: 'main' };
+    s = setRes(s, 1, { wood: 1, brick: 4, wheat: 4, sheep: 4, ore: 4 });
+    s = applyOrThrow(s, { type: 'createTradeOffer', give: { wood: 1 }, receive: { ore: 1 }, anyCount: 0, target: 0 });
+    expect(s.tradeOffers[0].responses[0].status).toBe('pending');
+
+    const action = nextBotAction(s, 1);
+    expect(action).not.toBeNull();
+    expect(action!.type).not.toBe('endTurn');
+  });
+
+  it('lets a bot proactively cancel its own offer once it can no longer afford the give side', () => {
+    let s = autoSetup(game(19));
+    s = { ...s, currentPlayer: 1, phase: 'main' };
+    s = setRes(s, 1, { wood: 1 });
+    s = setRes(s, 0, {});
+    s = applyOrThrow(s, { type: 'createTradeOffer', give: { wood: 1 }, receive: { ore: 1 }, anyCount: 0, target: 0 });
+    expect(s.tradeOffers[0].responses[0].status).toBe('pending');
+
+    s = setRes(s, 1, {});
+    const action = nextBotAction(s, 1);
+    expect(action).toEqual({ type: 'cancelTradeOffer', offerId: s.tradeOffers[0].id });
+    s = applyOrThrow(s, action!);
+    expect(s.tradeOffers).toHaveLength(0);
+  });
+
+  it('does not send a speculative trade as the final action of a turn', () => {
+    let s = autoSetup(game(22));
+    s = { ...s, currentPlayer: 1, phase: 'main' };
+    s = setRes(s, 1, { ore: 1 });
+
+    expect(nextBotAction(s, 1)).toEqual({ type: 'endTurn' });
+  });
+
+  it('still offers a trade when one card immediately completes a purchase', () => {
+    let s = autoSetup(game(23));
+    s = { ...s, currentPlayer: 1, phase: 'main' };
+    s = setRes(s, 1, { wood: 2 });
+
+    expect(nextBotAction(s, 1)).toMatchObject({
+      type: 'createTradeOffer',
+      give: { wood: 1 },
+      receive: { brick: 1 },
+      target: 0,
+    });
   });
 
   it('collects bot responses while waiting, then lets the proposer trade with an accepting bot', () => {
@@ -248,6 +307,9 @@ describe('resource action validation', () => {
     expect(s.players[0].resources).toMatchObject({ wood: 0, brick: 1 });
     expect(s.players[1].resources).toMatchObject({ wood: 1, brick: 0 });
     expect(totalResources(s.players[0].resources) + totalResources(s.players[1].resources)).toBe(before);
+    expect(s.log.at(-1)?.details).toMatchObject({
+      type: 'trade', kind: 'player', partner: 1, give: { wood: 1 }, receive: { brick: 1 },
+    });
   });
 });
 
@@ -264,6 +326,9 @@ describe('monopoly', () => {
     expect(res.players[0].resources.wheat).toBe(5);
     expect(res.players[1].resources.wheat).toBe(0);
     expect(res.players[2].resources.wheat).toBe(0);
+    expect(res.log.at(-1)?.details).toEqual({
+      type: 'monopoly', resource: 'wheat', count: 5, visibility: 'public',
+    });
   });
 });
 
@@ -285,6 +350,13 @@ describe('robber', () => {
     expect(res.players[0].stats.robberMoves).toBe(1);
     expect(res.players[0].stats.successfulSteals).toBe(1);
     expect(res.players[0].stats.cardsStolen).toBe(1);
+    const stealEntry = [...res.log].reverse().find((entry) => entry.details?.type === 'steal');
+    expect(stealEntry?.details).toEqual({
+      type: 'steal', victim: 1, resource: 'sheep', visibility: 'participants',
+    });
+    expect(canRevealLogResources(stealEntry!, 0)).toBe(true);
+    expect(canRevealLogResources(stealEntry!, 1)).toBe(true);
+    expect(canRevealLogResources(stealEntry!, 2)).toBe(false);
   });
 
   it('protects players below 3 VP with Friendly Robber', () => {
@@ -345,6 +417,11 @@ describe('match statistics', () => {
     expect(reduce(s, { type: 'discard', player: 0, resources: { wood: 3 } }).ok).toBe(false);
     s = applyOrThrow(s, { type: 'discard', player: 0, resources: { wood: 4 } });
     expect(s.players[0].stats.cardsDiscarded).toBe(4);
+    expect(s.log.at(-1)?.details).toEqual({
+      type: 'discard', resources: { wood: 4 }, count: 4, visibility: 'public',
+    });
+    expect(canRevealLogResources(s.log.at(-1)!, 0)).toBe(true);
+    expect(canRevealLogResources(s.log.at(-1)!, 1)).toBe(true);
   });
 
   it('has a point-source breakdown equal to final victory points', () => {
@@ -366,12 +443,12 @@ describe('progress cards', () => {
     s = { ...s, currentPlayer: 0, phase: 'main', turn: s.turn + 1 };
 
     s = applyOrThrow(s, { type: 'playRoadBuilding' });
-    expect(s.pending.freeRoads).toBe(2);
+    expect(s.pending.freeRoads[0]).toBe(2);
     expect(reduce(s, { type: 'endTurn' }).ok).toBe(false);
 
     s = applyOrThrow(s, { type: 'buildRoad', edge: legalRoadEdges(s, 0)[0] });
     s = applyOrThrow(s, { type: 'buildRoad', edge: legalRoadEdges(s, 0)[0] });
-    expect(s.pending.freeRoads).toBe(0);
+    expect(s.pending.freeRoads[0]).toBe(0);
     expect(reduce(s, { type: 'endTurn' }).ok).toBe(true);
   });
 
@@ -383,7 +460,7 @@ describe('progress cards', () => {
     s = applyOrThrow(s, { type: 'playRoadBuilding' });
     s = applyOrThrow(s, { type: 'buildRoad', edge: legalRoadEdges(s, 0)[0] });
     expect(s.phase).toBe('roll');
-    expect(s.pending.freeRoads).toBe(1);
+    expect(s.pending.freeRoads[0]).toBe(1);
   });
 
   it('clears unusable free roads before rolling instead of deadlocking', () => {
@@ -398,9 +475,9 @@ describe('progress cards', () => {
     for (const edge of blocked) if (roads[edge] === undefined && edge !== onlyEdge) roads[edge] = edge % 2 ? 1 : 2;
     s = { ...s, roads };
     s = applyOrThrow(s, { type: 'playRoadBuilding' });
-    expect(s.pending.freeRoads).toBe(2);
+    expect(s.pending.freeRoads[0]).toBe(2);
     s = applyOrThrow(s, { type: 'buildRoad', edge: onlyEdge });
-    expect(s.pending.freeRoads).toBe(0);
+    expect(s.pending.freeRoads[0]).toBe(0);
     expect(reduce(s, { type: 'rollDice' }).ok).toBe(true);
   });
 
@@ -411,7 +488,7 @@ describe('progress cards', () => {
     const roads = { ...s.roads };
     for (const edge of legalRoadEdges(s, 0)) roads[edge] = edge % 2 ? 1 : 2;
     s = applyOrThrow({ ...s, roads }, { type: 'playRoadBuilding' });
-    expect(s.pending.freeRoads).toBe(0);
+    expect(s.pending.freeRoads[0]).toBe(0);
     expect(reduce(s, { type: 'rollDice' }).ok).toBe(true);
   });
 
@@ -441,6 +518,78 @@ describe('debug actions', () => {
     expect(s.players[0].devCards.at(-1)).toMatchObject({ type: 'yearOfPlenty', played: false });
     s = applyOrThrow(s, { type: 'debugTriggerRobber' });
     expect(s.phase).toBe('moveRobber');
+  });
+});
+
+describe('rich history details', () => {
+  it('records dice faces, setup pieces, and second-placement resource gains', () => {
+    let s = game(61);
+    s = applyOrThrow(s, { type: 'rollForStart' });
+    expect(s.log.at(-1)?.details).toMatchObject({ type: 'dice', context: 'startingOrder' });
+    expect((s.log.at(-1)?.details as { dice?: number[] }).dice).toHaveLength(2);
+
+    s = autoSetup(s);
+    expect(s.log.some((entry) => entry.details?.type === 'piece' && entry.details.piece === 'settlement')).toBe(true);
+    expect(s.log.some((entry) => entry.details?.type === 'piece' && entry.details.piece === 'road')).toBe(true);
+    expect(s.log.filter((entry) => entry.details?.type === 'piece' && entry.details.piece === 'settlement').every((entry) => entry.details?.type === 'piece' && entry.details.vertex !== undefined)).toBe(true);
+    expect(s.log.filter((entry) => entry.details?.type === 'piece' && entry.details.piece === 'road').every((entry) => entry.details?.type === 'piece' && entry.details.edge !== undefined)).toBe(true);
+    const setupGains = s.log.filter((entry) => entry.details?.type === 'resourceGain' && entry.details.source === 'setup');
+    expect(setupGains).toHaveLength(s.players.length);
+    expect(setupGains.every((entry) => entry.details?.visibility === 'public')).toBe(true);
+  });
+
+  it('records only resources actually distributed by a dice roll', () => {
+    let selected: { before: GameState; after: GameState } | null = null;
+    for (let seed = 1; seed <= 30 && !selected; seed++) {
+      const before = autoSetup(game(seed));
+      const after = applyOrThrow(before, { type: 'rollDice' });
+      if (after.dice && after.dice[0] + after.dice[1] !== 7
+        && after.log.some((entry) => entry.details?.type === 'resourceGain' && entry.details.source === 'production')) {
+        selected = { before, after };
+      }
+    }
+    expect(selected).not.toBeNull();
+    const { before, after } = selected!;
+    const entries = after.log.slice(before.log.length)
+      .filter((entry) => entry.details?.type === 'resourceGain' && entry.details.source === 'production');
+    for (const entry of entries) {
+      const details = entry.details!;
+      if (details.type !== 'resourceGain' || entry.player === null) continue;
+      for (const resource of ['wood', 'brick', 'sheep', 'wheat', 'ore'] as const) {
+        expect(details.resources[resource] ?? 0).toBe(
+          Math.max(0, after.players[entry.player].resources[resource] - before.players[entry.player].resources[resource]),
+        );
+      }
+    }
+
+    const emptyBank = { wood: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 };
+    const starved = applyOrThrow({ ...before, bank: emptyBank }, { type: 'rollDice' });
+    if (starved.dice && starved.dice[0] + starved.dice[1] !== 7) {
+      expect(starved.log.slice(before.log.length).some((entry) => entry.details?.type === 'resourceGain')).toBe(false);
+    }
+  });
+
+  it('records city art metadata and Year of Plenty cards', () => {
+    let s = autoSetup(game(62));
+    const vertex = Number(Object.keys(s.buildings).find((id) => s.buildings[Number(id)].owner === 0));
+    s = setRes({ ...s, currentPlayer: 0, phase: 'main' }, 0, { wheat: 2, ore: 3 });
+    s = applyOrThrow(s, { type: 'buildCity', vertex });
+    expect(s.log.at(-1)?.details).toEqual({ type: 'piece', piece: 'city', verb: 'built', vertex, visibility: 'public' });
+
+    s = withDevCard(s, 0, 'yearOfPlenty');
+    s = { ...s, phase: 'main', turn: s.turn + 1 };
+    s = applyOrThrow(s, { type: 'playYearOfPlenty', resources: ['wood', 'ore'] });
+    expect(s.log.at(-1)?.details).toEqual({
+      type: 'resourceGain', source: 'yearOfPlenty', resources: { wood: 1, ore: 1 }, visibility: 'public',
+    });
+  });
+
+  it('records a generic development-card purchase without revealing its face', () => {
+    let s = autoSetup(game(63));
+    s = setRes({ ...s, currentPlayer: 0, phase: 'main' }, 0, { sheep: 1, wheat: 1, ore: 1 });
+    s = applyOrThrow(s, { type: 'buyDevCard' });
+    expect(s.log.at(-1)?.details).toEqual({ type: 'developmentCard', visibility: 'public' });
+    expect(s.log.at(-1)?.message).not.toContain(s.players[0].devCards.at(-1)!.type);
   });
 });
 

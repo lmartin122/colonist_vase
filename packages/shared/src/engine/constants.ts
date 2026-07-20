@@ -43,7 +43,21 @@ export const DEV_DECK: DevCardType[] = [
   ...Array<DevCardType>(2).fill('yearOfPlenty'),
 ];
 
-export const PLAYER_COLORS = ['red', 'blue', 'orange', 'green', 'black'] as const;
+/** Colors that have a complete road + settlement + city set in the packed art. */
+export const PLAYER_COLORS = [
+  'red',
+  'blue',
+  'orange',
+  'green',
+  'black',
+  'bronze',
+  'gold',
+  'mysticblue',
+  'pink',
+  'purple',
+  'silver',
+  'white',
+] as const;
 
 /** Number of "pips" (probability dots) printed on each dice number token. */
 export const NUMBER_PIPS: Record<number, number> = {

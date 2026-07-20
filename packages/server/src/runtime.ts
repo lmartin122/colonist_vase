@@ -1,5 +1,5 @@
 import type { Action, GameState } from '@colonist/shared';
-import { nextBotAction, reduce } from '@colonist/shared';
+import { botHasMoveAvailable, isConcurrentPhase, nextBotAction, reduce } from '@colonist/shared';
 
 /**
  * The authoritative game runtime. Pure/deterministic and independent of
@@ -27,6 +27,10 @@ export function authorizeSeat(state: GameState, seat: number, action: Action): s
     case 'respondTradeOffer':
       return action.responder === seat ? null : 'You can only respond to trades for yourself';
     default:
+      if (isConcurrentPhase(state)) {
+        if (!('player' in action) || action.player !== seat) return 'Action must identify your own seat';
+        return state.pending.passed[seat] ? 'You have already passed this round' : null;
+      }
       return seat === state.currentPlayer ? null : 'It is not your turn';
   }
 }
@@ -40,19 +44,34 @@ export function authorizeSeat(state: GameState, seat: number, action: Action): s
 export function botActor(state: GameState): number | null {
   if (state.phase === 'gameOver') return null;
 
-  const humanResponsePending = state.tradeOffers.some((offer) =>
-    Object.entries(offer.responses).some(
-      ([seat, response]) => response.status === 'pending' && !state.players[Number(seat)].isBot,
-    ),
-  );
-  if (humanResponsePending) return null;
-
   if (state.phase === 'discard') {
     const botOwing = Object.keys(state.pending.discards)
       .map(Number)
       .find((p) => state.players[p].isBot);
     return botOwing ?? null;
   }
+
+  if (state.phase === 'moveRobber') {
+    return state.players[state.currentPlayer].isBot ? state.currentPlayer : null;
+  }
+
+  if (isConcurrentPhase(state)) {
+    const bots = state.turnOrder.filter((seat) => state.players[seat].isBot);
+    if (!bots.length) return null;
+    const start = state.log.length % bots.length;
+    for (let index = 0; index < bots.length; index++) {
+      const seat = bots[(start + index) % bots.length];
+      if (!state.pending.passed[seat] && botHasMoveAvailable(state, seat)) return seat;
+    }
+    return null;
+  }
+
+  const humanResponsePending = state.tradeOffers.some((offer) =>
+    Object.entries(offer.responses).some(
+      ([seat, response]) => response.status === 'pending' && !state.players[Number(seat)].isBot,
+    ),
+  );
+  if (humanResponsePending) return null;
 
   return state.players[state.currentPlayer].isBot ? state.currentPlayer : null;
 }
@@ -82,7 +101,9 @@ export async function driveBots(
     if (!result.ok) {
       // A bot should never emit an illegal move; end its turn as a safety net.
       console.warn('[bot] illegal action, ending turn:', action, result.error);
-      const fallback = reduce(current, { type: 'endTurn' });
+      const fallback = reduce(current, isConcurrentPhase(current)
+        ? { type: 'passRound', player: actor }
+        : { type: 'endTurn' });
       if (!fallback.ok) break;
       current = fallback.state;
       onState(current);

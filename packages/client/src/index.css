@@ -2,6 +2,28 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Ribbon artwork is always pale, so its printed score needs invariant dark ink. */
+.ribbon-points {
+  color: #302b26;
+  text-shadow: 0 1px 0 rgb(255 255 255 / 65%);
+}
+
+@media (min-width: 850px) and (max-height: 680px) {
+  [data-start-screen-card] {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+  }
+
+  [data-start-screen-logo] {
+    font-size: 1.75rem;
+    line-height: 2rem;
+  }
+
+  [data-start-screen-subtitle] {
+    margin-bottom: 0.75rem;
+  }
+}
+
 /* Keep the trade-offer rail in the play area, immediately left of the fixed sidebar. */
 .trade-offers-rail {
   right: 0.75rem;
@@ -9,13 +31,19 @@
 
 @media (min-width: 768px) {
   .trade-offers-rail {
-    right: calc(300px + 0.75rem);
+    right: calc(260px + 0.75rem);
   }
 }
 
 @media (min-width: 1024px) {
   .trade-offers-rail {
-    right: calc(330px + 0.75rem);
+    right: calc(280px + 0.75rem);
+  }
+}
+
+@media (min-width: 1280px) {
+  .trade-offers-rail {
+    right: calc(320px + 0.75rem);
   }
 }
 
@@ -106,10 +134,33 @@ canvas {
   touch-action: none;
 }
 
+html:has([data-trade-panel]) [data-mobile-info] {
+  display: none;
+}
+
+button,
+[role='button'],
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+:where(button, [role='button'], input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid #fbbf24;
+  outline-offset: 3px;
+}
+
 /* Respect reduced-motion preferences. */
 @media (prefers-reduced-motion: reduce) {
-  * {
+  html:not([data-motion='full']) * {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+html[data-motion='reduced'] * {
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
 }

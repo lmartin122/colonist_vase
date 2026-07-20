@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { RESOURCE_CARD } from '../assets';
+import { CARD_DEV_BACK_FRAME, RESOURCE_CARD_FRAME } from '../assets';
 import { tileClientPos } from '../render/boardAnchors';
 import { onFlight, type Anchor, type Flight } from '../state/flights';
+import { PackedSprite } from './PackedSprite';
+import { useReducedMotionPreference } from '../state/useMotionPreference';
 
 /**
  * Full-screen overlay that animates resource cards flying between the board,
@@ -37,13 +39,21 @@ function anchorPos(a: Anchor): { x: number; y: number } | null {
     case 'bank': return centerOf(`[data-bank="${a.resource}"]`);
     case 'hand': return centerOf(`[data-hand-stack="${a.resource}"]`) ?? centerOf('[data-hand-panel]');
     case 'player': return centerOf(`[data-player-cards="${a.id}"]`) ?? centerOf(`[data-player="${a.id}"]`);
+    case 'devDeck': return centerOf('[data-dev-deck]');
+    case 'devHand': return centerOf('[data-dev-hand]') ?? centerOf('[data-hand-panel]');
+    case 'devStack': return centerOf(`[data-dev-stack="${a.id}"]`) ?? centerOf(`[data-player="${a.id}"]`);
   }
 }
 
 export function CardFlights() {
   const [live, setLive] = useState<Live[]>([]);
+  const reducedMotion = useReducedMotionPreference();
 
   useEffect(() => {
+    if (reducedMotion) {
+      setLive([]);
+      return;
+    }
     const frames = new Set<number>();
     const unsubscribe = onFlight((f) => {
       // Let React commit the updated resource pile before resolving its center.
@@ -62,24 +72,25 @@ export function CardFlights() {
       unsubscribe();
       frames.forEach(cancelAnimationFrame);
     };
-  }, []);
+  }, [reducedMotion]);
 
   return (
     <div data-card-flights className="pointer-events-none fixed inset-0 z-[70] overflow-hidden">
       <AnimatePresence>
         {live.map((f) => (
-          <motion.img
+          <motion.div
             key={f.id}
-            src={RESOURCE_CARD[f.resource]}
-            alt=""
-            draggable={false}
             initial={{ x: f.sx - CARD_W / 2, y: f.sy - CARD_H / 2, opacity: 0, scale: 0.5, rotate: -8 }}
             animate={{ x: f.dx - CARD_W / 2, y: f.dy - CARD_H / 2, opacity: 1, scale: 1, rotate: 0 }}
             exit={{ opacity: 0, scale: 0.7, transition: { duration: 0.16, delay: 0 } }}
             transition={{ duration: DURATION, delay: f.delay, ease: [0.22, 0.61, 0.36, 1] }}
             style={{ position: 'absolute', left: 0, top: 0, width: CARD_W }}
-            className="rounded-[4px] shadow-lg ring-1 ring-black/15"
-          />
+          >
+            <PackedSprite
+              name={f.resource ? RESOURCE_CARD_FRAME[f.resource] : CARD_DEV_BACK_FRAME}
+              className="w-full rounded-[4px] shadow-lg ring-1 ring-black/15"
+            />
+          </motion.div>
         ))}
       </AnimatePresence>
     </div>

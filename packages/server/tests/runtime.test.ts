@@ -14,6 +14,18 @@ function allBotGame(seed: number): GameState {
   });
 }
 
+function allBotRushGame(seed: number): GameState {
+  return createGame({
+    players: [
+      { name: 'A', isBot: true, botDifficulty: 'medium' },
+      { name: 'B', isBot: true, botDifficulty: 'medium' },
+      { name: 'C', isBot: true, botDifficulty: 'medium' },
+    ],
+    seed,
+    rules: { mode: 'rush' },
+  });
+}
+
 describe('authorizeSeat', () => {
   // A fresh game starts in 'startingRoll'; currentPlayer is seat 0.
   const state = allBotGame(1);
@@ -34,6 +46,13 @@ describe('authorizeSeat', () => {
     expect(authorizeSeat(state, 3, { type: 'respondTradeOffer', offerId: 1, responder: 3, accepted: true })).toBeNull();
     expect(authorizeSeat(state, 3, { type: 'respondTradeOffer', offerId: 1, responder: 0, accepted: true })).not.toBeNull();
   });
+
+  it('binds concurrent Rush actions to the sending seat', () => {
+    const state = { ...allBotRushGame(11), phase: 'rushRound' as const };
+    expect(authorizeSeat(state, 1, { type: 'buyDevCard', player: 1 })).toBeNull();
+    expect(authorizeSeat(state, 1, { type: 'buyDevCard', player: 2 })).not.toBeNull();
+    expect(authorizeSeat(state, 1, { type: 'buyDevCard' })).not.toBeNull();
+  });
 });
 
 describe('driveBots', () => {
@@ -48,6 +67,12 @@ describe('driveBots', () => {
     const b = await driveBots(allBotGame(7), () => {}, 0);
     expect(a.winner).toBe(b.winner);
     expect(a.turn).toBe(b.turn);
+  }, 20000);
+
+  it('plays an all-bot Rush game to a legal winner', async () => {
+    const final = await driveBots(allBotRushGame(42), () => {}, 0);
+    expect(final.phase).toBe('gameOver');
+    expect(final.winner).not.toBeNull();
   }, 20000);
 
   it('rejects an out-of-turn action via the reducer path', () => {

@@ -5,6 +5,7 @@ import {
   legalSettlementVertices,
   robberTargetTiles,
   stealableOpponents,
+  isConcurrentPhase,
 } from '@colonist/shared';
 import type { GameState } from '@colonist/shared';
 import type { InteractionMode } from '../render/BoardRenderer';
@@ -25,7 +26,8 @@ export function deriveInteraction(
   chooseRobberVictim?: (tile: number, action: RobberAction, victims: number[]) => void,
 ): InteractionMode | null {
   if (!game) return null;
-  const isHumanTurn = game.currentPlayer === humanId;
+  const concurrent = isConcurrentPhase(game);
+  const isHumanTurn = concurrent ? !game.pending.passed[humanId] : game.currentPlayer === humanId;
 
   // Setup snake draft.
   if (game.phase === 'setup' && isHumanTurn && game.setup) {
@@ -44,44 +46,44 @@ export function deriveInteraction(
   // Moving the robber after a 7.
   if (game.phase === 'moveRobber' && isHumanTurn) {
     return {
-      tiles: robberTargetTiles(game),
+      tiles: robberTargetTiles(game, humanId),
       onTile: (t) => resolveRobberTarget(game, t, 'moveRobber', humanId, dispatch, chooseRobberVictim),
     };
   }
 
   // Road Building card: force free-road placement until the grant is used up.
-  if (game.pending.freeRoads > 0 && isHumanTurn) {
+  if ((game.pending.freeRoads[humanId] ?? 0) > 0 && isHumanTurn) {
     return {
       edges: legalRoadEdges(game, humanId),
-      onEdge: (e) => dispatch({ type: 'buildRoad', edge: e }),
+      onEdge: (e) => dispatch({ type: 'buildRoad', edge: e, player: humanId }),
     };
   }
 
   // Knight may be played before rolling, as well as during the main phase.
-  if (build?.kind === 'knight' && isHumanTurn && (game.phase === 'roll' || game.phase === 'main')) {
+  if (build?.kind === 'knight' && isHumanTurn && (game.phase === 'roll' || game.phase === 'main' || concurrent)) {
     return {
-      tiles: robberTargetTiles(game),
+      tiles: robberTargetTiles(game, humanId),
       onTile: (t) => resolveRobberTarget(game, t, 'playKnight', humanId, dispatch, chooseRobberVictim),
     };
   }
 
-  if (game.phase !== 'main' || !isHumanTurn) return null;
+  if ((game.phase !== 'main' && !concurrent) || !isHumanTurn) return null;
 
   switch (build?.kind) {
     case 'road':
       return {
         edges: legalRoadEdges(game, humanId),
-        onEdge: (e) => dispatch({ type: 'buildRoad', edge: e }),
+        onEdge: (e) => dispatch({ type: 'buildRoad', edge: e, player: humanId }),
       };
     case 'settlement':
       return {
         vertices: legalSettlementVertices(game, humanId, false),
-        onVertex: (v) => dispatch({ type: 'buildSettlement', vertex: v }),
+        onVertex: (v) => dispatch({ type: 'buildSettlement', vertex: v, player: humanId }),
       };
     case 'city':
       return {
         cityVertices: legalCityVertices(game, humanId),
-        onVertex: (v) => dispatch({ type: 'buildCity', vertex: v }),
+        onVertex: (v) => dispatch({ type: 'buildCity', vertex: v, player: humanId }),
       };
     default:
       return null;
@@ -103,6 +105,6 @@ function resolveRobberTarget(
   }
   const stealFrom = victims[0] ?? null;
   return action === 'moveRobber'
-    ? dispatch({ type: 'moveRobber', tile, stealFrom })
-    : dispatch({ type: 'playKnight', tile, stealFrom });
+    ? dispatch({ type: 'moveRobber', tile, stealFrom, player: humanId })
+    : dispatch({ type: 'playKnight', tile, stealFrom, player: humanId });
 }

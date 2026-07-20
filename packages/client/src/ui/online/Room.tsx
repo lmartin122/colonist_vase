@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import type { BotDifficulty } from '@colonist/shared';
+import { GAME_MODES, type BotDifficulty } from '@colonist/shared';
 import { PLAYER_CSS } from '../../render/palette';
 import { useIdentity } from '../../auth/identity';
 import { addBot, joinRoom, leaveRoom, removeSeat, setReady, startGame } from '../../net/socket';
@@ -60,6 +60,10 @@ export function Room() {
             📋 Copiar invitación
           </button>
         </div>
+
+        <p className="mt-2 text-sm text-ink-soft">
+          {GAME_MODES[room.rules.mode].label} · tablero {room.layout === 'classic' ? 'clásico' : 'aleatorio'}
+        </p>
 
         <ul className="mt-6 space-y-2">
           {room.seats.map((seat) => (

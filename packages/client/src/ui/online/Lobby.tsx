@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { GAME_MODES, type GameModeId } from '@colonist/shared';
 import { useIdentity } from '../../auth/identity';
 import { createRoom, joinRoom } from '../../net/socket';
 import { useOnline } from '../../state/online';
@@ -11,11 +12,13 @@ export function Lobby() {
   const [code, setLocalCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<GameModeId>('classic');
+  const [layout, setLayout] = useState<'random' | 'classic'>('random');
 
   async function onCreate() {
     setBusy(true);
     setError(null);
-    const res = await createRoom({});
+    const res = await createRoom({ rules: { mode }, layout });
     setBusy(false);
     if (res.ok) {
       setCode(res.data.code);
@@ -42,6 +45,36 @@ export function Lobby() {
           <h2 className="font-display text-2xl font-extrabold text-ink">Salas</h2>
           <span className="text-sm text-ink-soft">{name}</span>
         </div>
+
+        <div className="mb-4 grid grid-cols-2 gap-3">
+          <label className="text-xs font-bold text-ink-soft">
+            Modo
+            <select
+              value={mode}
+              onChange={(event) => setMode(event.target.value as GameModeId)}
+              className="mt-1 w-full rounded-lg bg-card-alt px-3 py-2 text-sm font-bold text-ink ring-1 ring-black/5 dark:ring-white/10"
+            >
+              {Object.values(GAME_MODES).map((gameMode) => (
+                <option key={gameMode.id} value={gameMode.id}>{gameMode.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs font-bold text-ink-soft">
+            Tablero
+            <select
+              value={layout}
+              onChange={(event) => setLayout(event.target.value as 'random' | 'classic')}
+              className="mt-1 w-full rounded-lg bg-card-alt px-3 py-2 text-sm font-bold text-ink ring-1 ring-black/5 dark:ring-white/10"
+            >
+              <option value="random">Aleatorio</option>
+              <option value="classic">Clásico</option>
+            </select>
+          </label>
+        </div>
+
+        <p className="mb-4 rounded-lg bg-card-alt px-3 py-2 text-xs text-ink-soft">
+          {GAME_MODES[mode].description}
+        </p>
 
         <button
           onClick={onCreate}

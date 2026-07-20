@@ -46,6 +46,13 @@ export const PLAYER_HEX: Record<PlayerColor, number> = {
   orange: 0xe8862a,
   green: 0x3c9e4e,
   black: 0x242424,
+  bronze: 0xb85f43,
+  gold: 0xf2c313,
+  mysticblue: 0x8bc9ee,
+  pink: 0xf29abb,
+  purple: 0x9d36cf,
+  silver: 0xaeb3b8,
+  white: 0xe9efea,
 };
 
 export const PLAYER_CSS: Record<PlayerColor, string> = {
@@ -54,6 +61,13 @@ export const PLAYER_CSS: Record<PlayerColor, string> = {
   orange: '#E8862A',
   green: '#3C9E4E',
   black: '#242424',
+  bronze: '#B85F43',
+  gold: '#F2C313',
+  mysticblue: '#8BC9EE',
+  pink: '#F29ABB',
+  purple: '#9D36CF',
+  silver: '#AEB3B8',
+  white: '#E9EFEA',
 };
 
 export const OCEAN = 0x0966a5;

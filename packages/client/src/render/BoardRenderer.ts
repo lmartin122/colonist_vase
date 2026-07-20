@@ -1,14 +1,13 @@
 import { Application, Circle, Container, FillGradient, Graphics, Sprite, Text, TextStyle } from 'pixi.js';
+import { HEX_SIZE, NUMBER_PIPS, axialToPixel, distance, longestRoadPath, longestRoadPathThroughEdge } from '@colonist/shared';
 import type { Board, GameState, PlayerColor, PortType, TileType } from '@colonist/shared';
-import { NUMBER_PIPS } from '@colonist/shared';
-import { HEX_ASSET, PORT_PIER_FRAME, PORT_SHIP_FRAME, SHORE_TILES, cityAsset, roadAsset, settlementAsset } from '../assets';
-import { HEX_SIZE, axialToPixel, distance } from '@colonist/shared';
+import { HEX_FRAME, HEX_SIDE_FRAME, HIGHLIGHT_CIRCLE_FRAME, PORT_PIER_FRAME, PORT_SHIP_FRAME, ROBBER_FRAME, SHORE_TILES, cityFrame, probabilityFrame, roadFrame, settlementFrame } from '../assets';
 import type { TextureMap } from './textures';
+import type { BoardPreview } from '../state/boardPreview';
 import {
   HIGHLIGHT,
   LAND_SAND,
   PLAYER_HEX,
-  ROBBER_COLOR,
   TILE_COLORS,
   TILE_COLORS_LIGHT,
   TILE_MOTIF,
@@ -31,6 +30,9 @@ const SHORE_OVERSCALE = 1.08;
 /** Terrain tiles sit slightly inset so the flat sand base shows as clean joints.
  * Kept close to 1 so the joints stay thin and placed roads overlap the tile edge. */
 const TILE_INSET = 0.992;
+/** Shared presentation controls for every `tile_*_side` overlay. */
+const TILE_SIDE_WIDTH = HEX_SIZE * 1.1;
+const TILE_SIDE_OFFSET_Y = -40;
 
 /** Find the shore composite + rotation whose beach sides match the given sides. */
 function matchShore(mask: number[]): { frame: string; rot: number } | null {
@@ -64,6 +66,13 @@ interface Anim {
   duration: number;
 }
 
+interface RobberMoveAnim extends Anim {
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+}
+
 /**
  * Draws the board and pieces from GameState onto a PixiJS stage. The renderer is
  * a pure *view*: it never mutates game state, only reflects it and emits click
@@ -75,6 +84,8 @@ export class BoardRenderer {
   private readonly land = new Container();
   private readonly tiles = new Container();
   private readonly ports = new Container();
+  private readonly roadHover = new Container();
+  private readonly preview = new Container();
   private readonly pieces = new Container();
   private readonly overlay = new Container();
 
@@ -83,24 +94,27 @@ export class BoardRenderer {
   private seenRoads = new Set<number>();
   private anims: Anim[] = [];
   private robberSprite: Container | null = null;
+  private robberTileId: number | null = null;
+  private robberMove: RobberMoveAnim | null = null;
   private bottomInset = 0;
   private rightInset = 0;
   private fittedScale = 1;
   private interactionLocked = false;
+  private reducedMotion = false;
 
   constructor(
     private readonly app: Application,
     private readonly tex: TextureMap = {},
   ) {
-    this.view.addChild(this.land, this.shore, this.tiles, this.ports, this.overlay, this.pieces);
+    this.view.addChild(this.land, this.shore, this.tiles, this.ports, this.preview, this.overlay, this.roadHover, this.pieces);
     app.stage.addChild(this.view);
     app.ticker.add((t) => this.tick(t.deltaMS));
   }
 
-  /** Build a sprite from a preloaded texture URL, or null if it isn't loaded. */
-  private sprite(url: string | null): Sprite | null {
-    if (!url) return null;
-    const texture = this.tex[url];
+  /** Build a sprite from a preloaded URL/frame key, or null if it isn't loaded. */
+  private sprite(key: string | null): Sprite | null {
+    if (!key) return null;
+    const texture = this.tex[key];
     return texture ? new Sprite(texture) : null;
   }
 
@@ -115,6 +129,8 @@ export class BoardRenderer {
     this.seenBuildings.clear();
     this.seenRoads.clear();
     this.robberSprite = null;
+    this.robberTileId = null;
+    this.robberMove = null;
 
     this.drawShore(board);
     this.drawLand(board);
@@ -188,16 +204,15 @@ export class BoardRenderer {
       return [cx + (p.x - cx) * TILE_INSET, cy + (p.y - cy) * TILE_INSET];
     });
 
-    const hexSprite = this.sprite(HEX_ASSET[tile.type]);
+    const hexSprite = this.sprite(HEX_FRAME[tile.type]);
     if (hexSprite) {
-      // SVG terrain art (includes the resource motif), sitting slightly inset so
-      // the flat sand base shows through as a clean joint between tiles.
+      // Packed `tile_*_empty` art supplies the terrain base.
       hexSprite.anchor.set(0.5);
       hexSprite.scale.set((HEX_SIZE * 2 * TILE_INSET) / hexSprite.texture.height);
       hexSprite.position.set(cx, cy);
       this.tiles.addChild(hexSprite);
     } else {
-      // Fallback for tiles without art (ore, desert): gradient + drawn motif.
+      // Network/load fallback: retain a usable procedural tile.
       const grad = new FillGradient({
         type: 'linear',
         start: { x: 0, y: 0 },
@@ -211,6 +226,18 @@ export class BoardRenderer {
       const g = new Graphics();
       g.poly(pts).fill(grad);
       this.tiles.addChild(g);
+    }
+
+    const sideSprite = this.sprite(HEX_SIDE_FRAME[tile.type]);
+    if (sideSprite) {
+      sideSprite.anchor.set(0.5);
+      // Atlas frames have different source widths (for example, desert is
+      // wider than lumber). Scale from each frame's own width so all terrain
+      // illustrations have the same apparent width and retain their aspect.
+      sideSprite.scale.set(TILE_SIDE_WIDTH / sideSprite.texture.width);
+      sideSprite.position.set(cx, cy + TILE_SIDE_OFFSET_Y);
+      this.tiles.addChild(sideSprite);
+    } else {
       this.drawTerrainMotif(tile.type, cx, cy - 20);
     }
 
@@ -280,6 +307,16 @@ export class BoardRenderer {
   }
 
   private drawToken(x: number, y: number, value: number): void {
+    const token = this.sprite(probabilityFrame(value));
+    if (token) {
+      token.anchor.set(0.5);
+      token.scale.set(72 / token.texture.width);
+      token.position.set(x, y);
+      this.tiles.addChild(token);
+      return;
+    }
+
+    // Procedural fallback if the packed token art could not be loaded.
     const hot = value === 6 || value === 8;
     const group = new Container();
     const disc = new Graphics();
@@ -385,15 +422,24 @@ export class BoardRenderer {
   /** Reflect the dynamic parts of state: robber, roads, buildings. */
   sync(state: GameState): void {
     const board = state.board;
+    // Keep the same robber display object so an in-progress move survives
+    // unrelated state syncs while roads and buildings are reconstructed.
+    const robber = this.robberSprite ?? this.buildRobber();
+    this.roadHover.removeChildren();
     this.pieces.removeChildren();
 
     // Roads
     for (const [edgeStr, owner] of Object.entries(state.roads)) {
-      const edge = board.edges[Number(edgeStr)];
+      const edgeId = Number(edgeStr);
+      const edge = board.edges[edgeId];
       const [a, b] = edge.vertexIds.map((v) => board.vertices[v].point);
       const road = this.buildRoad(a, b, state.players[owner].color);
+      road.eventMode = 'static';
+      road.cursor = 'pointer';
+      road.on('pointerenter', () => this.showRoadPath(state, owner, edgeId));
+      road.on('pointerleave', () => this.roadHover.removeChildren());
       this.pieces.addChild(road);
-      this.animateIfNew(this.seenRoads, Number(edgeStr), road);
+      this.animateIfNew(this.seenRoads, edgeId, road);
     }
 
     // Buildings
@@ -407,9 +453,24 @@ export class BoardRenderer {
 
     // Robber
     const robberTile = board.tiles[board.robberTileId];
-    this.robberSprite = this.buildRobber();
-    this.robberSprite.position.set(robberTile.center.x + 34, robberTile.center.y - 6);
-    this.pieces.addChild(this.robberSprite);
+    const targetX = robberTile.center.x + 34;
+    const targetY = robberTile.center.y - 6;
+    if (!this.reducedMotion && this.robberTileId !== null && this.robberTileId !== board.robberTileId) {
+      this.robberMove = {
+        target: robber,
+        fromX: robber.position.x,
+        fromY: robber.position.y,
+        toX: targetX,
+        toY: targetY,
+        elapsed: 0,
+        duration: 520,
+      };
+    } else if (!this.robberMove) {
+      robber.position.set(targetX, targetY);
+    }
+    this.robberSprite = robber;
+    this.robberTileId = board.robberTileId;
+    this.pieces.addChild(robber);
   }
 
   private buildRoad(a: { x: number; y: number }, b: { x: number; y: number }, color: PlayerColor): Container {
@@ -418,7 +479,7 @@ export class BoardRenderer {
     const angle = Math.atan2(b.y - a.y, b.x - a.x);
     const edgeLen = distance(a, b);
 
-    const sprite = this.sprite(roadAsset(color));
+    const sprite = this.sprite(roadFrame(color));
     if (sprite) {
       sprite.anchor.set(0.5);
       // Road art is a vertical bar; align its long axis with the edge.
@@ -435,16 +496,92 @@ export class BoardRenderer {
       g.pivot.set(mid.x, mid.y);
       c.addChild(g);
     }
+    // A visible sprite can have a heavily trimmed atlas bound. Give every road
+    // an explicit full-length hover target so pointer detection is dependable.
+    const hitTarget = new Graphics();
+    hitTarget
+      .moveTo(a.x - mid.x, a.y - mid.y)
+      .lineTo(b.x - mid.x, b.y - mid.y)
+      .stroke({ width: 30, color: 0x000000, alpha: 0.001, cap: 'round' });
+    c.addChild(hitTarget);
     c.position.set(mid.x, mid.y);
     return c;
   }
 
+  private showRoadPath(state: GameState, owner: number, hoveredEdge: number): void {
+    const path = longestRoadPathThroughEdge(state, owner, hoveredEdge);
+    this.renderRoadPath(state, owner, path);
+  }
+
+  showPlayerLongestRoad(state: GameState, playerId: number): void {
+    this.renderRoadPath(state, playerId, longestRoadPath(state, playerId));
+  }
+
+  clearRoadPathHighlight(): void {
+    this.roadHover.removeChildren();
+  }
+
+  setBoardPreview(state: GameState, preview: BoardPreview | null): void {
+    this.preview.removeChildren();
+    if (!preview) return;
+    const graphics = new Graphics();
+    for (const tileId of preview.tiles ?? []) {
+      const tile = state.board.tiles[tileId];
+      if (!tile) continue;
+      const points = tile.vertexIds.flatMap((vertexId) => { const p = state.board.vertices[vertexId].point; return [p.x, p.y]; });
+      graphics.poly(points).fill({ color: HIGHLIGHT, alpha: 0.18 }).stroke({ width: 6, color: HIGHLIGHT, alpha: 0.95 });
+    }
+    for (const vertexId of preview.vertices ?? []) {
+      const point = state.board.vertices[vertexId]?.point;
+      if (point) graphics.circle(point.x, point.y, 28).fill({ color: HIGHLIGHT, alpha: 0.2 }).stroke({ width: 5, color: HIGHLIGHT });
+    }
+    for (const edgeId of preview.edges ?? []) {
+      const edge = state.board.edges[edgeId];
+      if (!edge) continue;
+      const [a, b] = edge.vertexIds.map((vertexId) => state.board.vertices[vertexId].point);
+      graphics.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 22, color: 0x000000, alpha: 0.9, cap: 'round' });
+    }
+    this.preview.addChild(graphics);
+  }
+
+  private renderRoadPath(state: GameState, owner: number, path: number[]): void {
+    this.roadHover.removeChildren();
+    if (path.length === 0) return;
+
+    const outlines = new Container();
+    const color = state.players[owner].color;
+    for (const edgeId of path) {
+      const edge = state.board.edges[edgeId];
+      const [a, b] = edge.vertexIds.map((vertexId) => state.board.vertices[vertexId].point);
+      const edgeLen = distance(a, b);
+      const borderSprite = this.sprite(roadFrame(color));
+      if (borderSprite) {
+        const baseScale = (edgeLen * 0.92) / borderSprite.texture.height;
+        borderSprite.anchor.set(0.5);
+        borderSprite.rotation = Math.atan2(b.y - a.y, b.x - a.x) - Math.PI / 2;
+        // The road art runs vertically: enlarge its width more than its length
+        // so the black duplicate reads as a strong outline around the sprite.
+        borderSprite.scale.set(baseScale * 1.38, baseScale * 1.08);
+        borderSprite.tint = 0x000000;
+        borderSprite.position.set((a.x + b.x) / 2, (a.y + b.y) / 2);
+        outlines.addChild(borderSprite);
+      } else {
+        const fallback = new Graphics();
+        const from = { x: a.x + (b.x - a.x) * 0.18, y: a.y + (b.y - a.y) * 0.18 };
+        const to = { x: b.x + (a.x - b.x) * 0.18, y: b.y + (a.y - b.y) * 0.18 };
+        fallback.moveTo(from.x, from.y).lineTo(to.x, to.y).stroke({ width: 26, color: 0x000000, alpha: 1, cap: 'round' });
+        outlines.addChild(fallback);
+      }
+    }
+    this.roadHover.addChild(outlines);
+  }
+
   private buildSettlement(p: { x: number; y: number }, color: PlayerColor): Container {
-    return this.buildPiece(p, this.sprite(settlementAsset(color)), color, 'settlement');
+    return this.buildPiece(p, this.sprite(settlementFrame(color)), color, 'settlement');
   }
 
   private buildCity(p: { x: number; y: number }, color: PlayerColor): Container {
-    return this.buildPiece(p, this.sprite(cityAsset(color)), color, 'city');
+    return this.buildPiece(p, this.sprite(cityFrame(color)), color, 'city');
   }
 
   private buildPiece(
@@ -474,10 +611,19 @@ export class BoardRenderer {
 
   private buildRobber(): Container {
     const c = new Container();
+    const sprite = this.sprite(ROBBER_FRAME);
+    if (sprite) {
+      sprite.anchor.set(0.5);
+      sprite.scale.set(60 / sprite.texture.height);
+      c.addChild(sprite);
+      return c;
+    }
+
+    // Keep a simple marker if the packed texture could not be loaded.
     const g = new Graphics();
     g.ellipse(0, 20, 12, 4).fill({ color: 0x0a1a24, alpha: 0.3 });
-    g.ellipse(0, 6, 12, 16).fill(ROBBER_COLOR).stroke({ width: 1.5, color: 0x000000, alpha: 0.35 });
-    g.circle(0, -12, 9).fill(ROBBER_COLOR).stroke({ width: 1.5, color: 0x000000, alpha: 0.35 });
+    g.ellipse(0, 6, 12, 16).fill(0x2b2a28).stroke({ width: 1.5, color: 0x000000, alpha: 0.35 });
+    g.circle(0, -12, 9).fill(0x2b2a28).stroke({ width: 1.5, color: 0x000000, alpha: 0.35 });
     g.ellipse(-3, -14, 3, 4).fill({ color: 0xffffff, alpha: 0.18 }); // subtle highlight
     c.addChild(g);
     return c;
@@ -486,6 +632,7 @@ export class BoardRenderer {
   private animateIfNew(seen: Set<number>, id: number, target: Container): void {
     if (seen.has(id)) return;
     seen.add(id);
+    if (this.reducedMotion) return;
     target.scale.set(0.1);
     this.anims.push({ target, elapsed: 0, duration: 260 });
   }
@@ -503,18 +650,24 @@ export class BoardRenderer {
     ];
     for (const { id: vId, city } of vertexTargets) {
       const p = board.vertices[vId].point;
-      const dot = new Graphics();
-      if (city) {
-        dot.circle(0, 0, 30).fill({ color: HIGHLIGHT, alpha: 0.16 }).stroke({ width: 5, color: HIGHLIGHT, alpha: 0.95 });
-        dot.circle(0, 0, 22).stroke({ width: 2, color: 0xffffff, alpha: 0.8 });
+      const radius = city ? 34 : 20;
+      const highlightSprite = this.sprite(HIGHLIGHT_CIRCLE_FRAME);
+      let dot: Container;
+      if (highlightSprite) {
+        highlightSprite.anchor.set(0.5);
+        highlightSprite.scale.set((radius * 2) / highlightSprite.texture.width);
+        dot = new Container();
+        dot.addChild(highlightSprite);
       } else {
-        dot.circle(0, 0, 16).fill({ color: HIGHLIGHT, alpha: 0.35 }).stroke({ width: 3, color: HIGHLIGHT });
+        const fallback = new Graphics();
+        fallback.circle(0, 0, radius).fill({ color: HIGHLIGHT, alpha: 0.28 }).stroke({ width: 3, color: HIGHLIGHT });
+        dot = fallback;
       }
       dot.position.set(p.x, p.y);
       dot.eventMode = 'static';
       dot.cursor = 'pointer';
-      dot.hitArea = new Circle(0, 0, city ? 34 : 20);
-      (dot as Container & { __pulse?: boolean }).__pulse = true;
+      dot.hitArea = new Circle(0, 0, radius);
+      (dot as Container & { __pulseScale?: number }).__pulseScale = dot.scale.x;
       dot.on('pointertap', () => this.invokeInteraction(mode.onVertex, vId));
       this.overlay.addChild(dot);
     }
@@ -522,25 +675,51 @@ export class BoardRenderer {
     for (const eId of mode.edges ?? []) {
       const edge = board.edges[eId];
       const [a, b] = edge.vertexIds.map((v) => board.vertices[v].point);
-      const g = new Graphics();
-      g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 24, color: HIGHLIGHT, alpha: 0.32, cap: 'round' });
-      g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 14, color: HIGHLIGHT, alpha: 0.9, cap: 'round' });
-      g.eventMode = 'static';
-      g.cursor = 'pointer';
-      g.on('pointertap', () => this.invokeInteraction(mode.onEdge, eId));
-      this.overlay.addChild(g);
+      const midpoint = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const radius = 20;
+      const highlightSprite = this.sprite(HIGHLIGHT_CIRCLE_FRAME);
+      let marker: Container;
+      if (highlightSprite) {
+        highlightSprite.anchor.set(0.5);
+        highlightSprite.scale.set((radius * 2) / highlightSprite.texture.width);
+        marker = new Container();
+        marker.addChild(highlightSprite);
+      } else {
+        const fallback = new Graphics();
+        fallback.circle(0, 0, radius).fill({ color: HIGHLIGHT, alpha: 0.28 }).stroke({ width: 3, color: HIGHLIGHT });
+        marker = fallback;
+      }
+      marker.position.set(midpoint.x, midpoint.y);
+      marker.eventMode = 'static';
+      marker.cursor = 'pointer';
+      marker.hitArea = new Circle(0, 0, radius);
+      (marker as Container & { __pulseScale?: number }).__pulseScale = marker.scale.x;
+      marker.on('pointertap', () => this.invokeInteraction(mode.onEdge, eId));
+      this.overlay.addChild(marker);
     }
 
     for (const tId of mode.tiles ?? []) {
       const tile = board.tiles[tId];
-      const pts = tile.vertexIds.flatMap((v) => [board.vertices[v].point.x, board.vertices[v].point.y]);
-      const g = new Graphics();
-      g.poly(pts).fill({ color: HIGHLIGHT, alpha: 0.22 }).stroke({ width: 4, color: HIGHLIGHT, alpha: 0.8 });
-      g.circle(tile.center.x, tile.center.y, 22).fill({ color: HIGHLIGHT, alpha: 0.32 }).stroke({ width: 4, color: 0xffffff, alpha: 0.9 });
-      g.eventMode = 'static';
-      g.cursor = 'pointer';
-      g.on('pointertap', () => this.invokeInteraction(mode.onTile, tId));
-      this.overlay.addChild(g);
+      const radius = 28;
+      const highlightSprite = this.sprite(HIGHLIGHT_CIRCLE_FRAME);
+      let marker: Container;
+      if (highlightSprite) {
+        highlightSprite.anchor.set(0.5);
+        highlightSprite.scale.set((radius * 2) / highlightSprite.texture.width);
+        marker = new Container();
+        marker.addChild(highlightSprite);
+      } else {
+        const fallback = new Graphics();
+        fallback.circle(0, 0, radius).fill({ color: HIGHLIGHT, alpha: 0.28 }).stroke({ width: 3, color: HIGHLIGHT });
+        marker = fallback;
+      }
+      marker.position.set(tile.center.x, tile.center.y);
+      marker.eventMode = 'static';
+      marker.cursor = 'pointer';
+      marker.hitArea = new Circle(0, 0, radius);
+      (marker as Container & { __pulseScale?: number }).__pulseScale = marker.scale.x;
+      marker.on('pointertap', () => this.invokeInteraction(mode.onTile, tId));
+      this.overlay.addChild(marker);
     }
   }
 
@@ -554,10 +733,39 @@ export class BoardRenderer {
   /** Where a tile's center currently sits in viewport (client) pixels. */
   tileClientPosition(tileId: number): { x: number; y: number } | null {
     if (!this.board) return null;
-    const t = this.board.tiles[tileId];
+    return this.worldClientPosition(this.board.tiles[tileId].center);
+  }
+
+  setReducedMotion(reduced: boolean): void {
+    this.reducedMotion = reduced;
+    if (!reduced) return;
+    for (const animation of this.anims) animation.target.scale.set(1);
+    this.anims = [];
+    if (this.robberMove) {
+      this.robberMove.target.position.set(this.robberMove.toX, this.robberMove.toY);
+      this.robberMove = null;
+    }
+    for (const child of this.overlay.children) {
+      const baseScale = (child as Container & { __pulseScale?: number }).__pulseScale;
+      if (baseScale !== undefined) child.scale.set(baseScale);
+    }
+  }
+
+  vertexClientPosition(vertexId: number): { x: number; y: number } | null {
+    if (!this.board) return null;
+    return this.worldClientPosition(this.board.vertices[vertexId].point);
+  }
+
+  edgeClientPosition(edgeId: number): { x: number; y: number } | null {
+    if (!this.board) return null;
+    const [a, b] = this.board.edges[edgeId].vertexIds.map((vertexId) => this.board!.vertices[vertexId].point);
+    return this.worldClientPosition({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  }
+
+  private worldClientPosition(point: { x: number; y: number }): { x: number; y: number } {
     const s = this.view.scale.x;
-    const localX = t.center.x * s + this.view.position.x;
-    const localY = t.center.y * s + this.view.position.y;
+    const localX = point.x * s + this.view.position.x;
+    const localY = point.y * s + this.view.position.y;
     const rect = this.app.canvas.getBoundingClientRect();
     const sx = this.app.screen.width ? rect.width / this.app.screen.width : 1;
     const sy = this.app.screen.height ? rect.height / this.app.screen.height : 1;
@@ -623,10 +831,26 @@ export class BoardRenderer {
       a.target.scale.set(0.1 + eased * 0.9);
       return t < 1;
     });
-    // Gentle pulse on placement highlight dots (positioned around their own origin).
+    if (this.robberMove) {
+      const move = this.robberMove;
+      move.elapsed += deltaMS;
+      const t = Math.min(1, move.elapsed / move.duration);
+      // Smooth horizontal travel with a small hop so the move reads clearly
+      // even between neighbouring hexes.
+      const eased = t * t * (3 - 2 * t);
+      const hop = Math.sin(Math.PI * t) * 18;
+      move.target.position.set(
+        move.fromX + (move.toX - move.fromX) * eased,
+        move.fromY + (move.toY - move.fromY) * eased - hop,
+      );
+      if (t >= 1) this.robberMove = null;
+    }
+    // Gentle pulse on placement highlights while preserving each sprite's fitted size.
+    if (this.reducedMotion) return;
     const pulse = 1 + Math.sin(this.app.ticker.lastTime / 300) * 0.12;
     for (const child of this.overlay.children) {
-      if ((child as Container & { __pulse?: boolean }).__pulse) child.scale.set(pulse);
+      const baseScale = (child as Container & { __pulseScale?: number }).__pulseScale;
+      if (baseScale !== undefined) child.scale.set(baseScale * pulse);
     }
   }
 

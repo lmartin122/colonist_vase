@@ -12,6 +12,7 @@ export type BotDifficulty = 'easy' | 'medium' | 'hard';
 
 /** A bag of resources, keyed by resource. Missing keys read as 0 via helpers. */
 export type ResourceBank = Record<Resource, number>;
+export type ResourceBundle = Partial<Record<Resource, number>>;
 
 export function emptyBank(): ResourceBank {
   return { wood: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 };
@@ -65,7 +66,19 @@ export interface Board {
 // ---------------------------------------------------------------------------
 
 export type BuildingType = 'settlement' | 'city';
-export type PlayerColor = 'red' | 'blue' | 'orange' | 'green' | 'black';
+export type PlayerColor =
+  | 'red'
+  | 'blue'
+  | 'orange'
+  | 'green'
+  | 'black'
+  | 'bronze'
+  | 'gold'
+  | 'mysticblue'
+  | 'pink'
+  | 'purple'
+  | 'silver'
+  | 'white';
 
 export interface Building {
   type: BuildingType;
@@ -123,6 +136,7 @@ export type Phase =
   | 'discard' // players over the limit must discard after a 7
   | 'moveRobber' // current player moves robber (+ steals)
   | 'main' // build / trade / play dev cards, then end turn
+  | 'rushRound' // Rush mode: every player may act; ends when all pass or time runs out
   | 'gameOver';
 
 export interface GameState {
@@ -161,14 +175,18 @@ export interface GameState {
   pending: {
     /** Player indices that still must discard, with how many. */
     discards: Record<number, number>;
-    /** Free roads granted (road building card / setup) before returning to main. */
-    freeRoads: number;
-    /** Dev card already played this turn (only one allowed). */
-    playedDevThisTurn: boolean;
+    /** Free roads granted (road building card / setup) before returning to main, per player. */
+    freeRoads: Record<number, number>;
+    /** Dev card already played this turn (only one allowed), per player. */
+    playedDevThisTurn: Record<number, boolean>;
     /** True once the current player has rolled this turn. */
     hasRolled: boolean;
-    /** Prevents a bot from repeatedly proposing the same trade in one turn. */
-    botTradeOfferedThisTurn: boolean;
+    /** Prevents a bot from repeatedly proposing the same trade in one turn, per player. */
+    botTradeOfferedThisTurn: Record<number, boolean>;
+    /** Rush mode: players who have pressed Pass/Ready this round. */
+    passed: Record<number, boolean>;
+    /** Rush mode: player who resolves the robber on a 7 for the current round; rotates each round. */
+    roundCaptain: number;
   };
 
   /** Player trade offers created during the active turn. */
@@ -187,6 +205,8 @@ export interface TradeOfferResponse {
 
 export interface TradeOffer {
   id: number;
+  /** Round/turn in which the offer was created. */
+  createdTurn: number;
   proposer: number;
   give: Partial<Record<Resource, number>>;
   receive: Partial<Record<Resource, number>>;
@@ -196,7 +216,12 @@ export interface TradeOffer {
   responses: Record<number, TradeOfferResponse>;
 }
 
+export type GameModeId = 'classic' | 'rush';
+
 export interface GameRules {
+  /** Classic: one player acts per turn. Rush: every round, all players act at once. */
+  mode: GameModeId;
+  /** Classic: seconds per turn. Rush: seconds per round. */
   turnTimer: 15 | 30 | 60;
   victoryPoints: number;
   discardLimit: number;
@@ -209,4 +234,73 @@ export interface LogEntry {
   turn: number;
   player: number | null;
   message: string;
+  /** Semantic data for rich history rendering; `message` remains the text fallback. */
+  details?: LogEntryDetails;
 }
+
+export type LogResourceVisibility = 'public' | 'actor' | 'participants';
+
+export type LogEntryDetails =
+  | {
+      type: 'dice';
+      dice: [number, number];
+      context: 'startingOrder' | 'turn' | 'rushRound';
+      visibility: 'public';
+    }
+  | {
+      type: 'piece';
+      piece: 'road' | 'settlement' | 'city';
+      verb: 'placed' | 'built';
+      edge?: number;
+      vertex?: number;
+      visibility: 'public';
+    }
+  | {
+      type: 'robber';
+      tile: number;
+      visibility: 'public';
+    }
+  | {
+      type: 'developmentCard';
+      visibility: 'public';
+    }
+  | {
+      type: 'resourceGain';
+      source: 'production' | 'setup' | 'yearOfPlenty';
+      resources: ResourceBundle;
+      visibility: 'public';
+    }
+  | {
+      type: 'trade';
+      kind: 'player' | 'bank';
+      partner: number | null;
+      give: ResourceBundle;
+      receive: ResourceBundle;
+      visibility: 'public';
+    }
+  | {
+      type: 'tradeOffer';
+      give: ResourceBundle;
+      receive: ResourceBundle;
+      anyCount: number;
+      target: number | null;
+      visibility: 'public';
+    }
+  | {
+      type: 'discard';
+      resources: ResourceBundle;
+      count: number;
+      visibility: 'public';
+    }
+  | {
+      type: 'steal';
+      victim: number;
+      resource: Resource;
+      visibility: 'participants';
+    }
+  | {
+      type: 'monopoly';
+      resource: Resource;
+      count: number;
+      visibility: 'public';
+    };

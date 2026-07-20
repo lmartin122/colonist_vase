@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { CARD_HIDDEN, LARGEST_ARMY, RESOURCE_CARD } from '../assets';
-import { bankTradeRatio } from '@colonist/shared';
+import { CARD_HIDDEN, LARGEST_ARMY, RESOURCE_CARD_FRAME } from '../assets';
+import { RESOURCES, bankTradeRatio, emptyBank } from '@colonist/shared';
 import type { GameState, Resource } from '@colonist/shared';
-import { emptyBank, RESOURCES } from '@colonist/shared';
 import { useGame } from '../state/store';
 import { StackedCard } from './StackedCard';
+import { PackedSprite } from './PackedSprite';
 
 type Bag = Record<Resource, number>;
 const zeroBag = emptyBank;
@@ -19,21 +19,13 @@ export function TradePanel({ game, give, onRemoveGive, onResetGive, onClose }: {
   const humanId = useGame((s) => s.humanId);
   const [want, setWant] = useState<Bag>(zeroBag);
   const [wantAny, setWantAny] = useState(0);
-  const [dockAction, setDockAction] = useState({ left: 0, width: 76, height: 76 });
   const [offerLayout, setOfferLayout] = useState({ left: 8, bottom: 120, width: 320 });
 
   useEffect(() => {
-    const button = document.querySelector<HTMLElement>('[data-dock-action="Trade"]');
     const hand = document.querySelector<HTMLElement>('[data-hand-panel]');
-    if (!button || !hand) return;
+    if (!hand) return;
     const measure = () => {
-      const rect = button.getBoundingClientRect();
       const handRect = hand.getBoundingClientRect();
-      setDockAction({
-        left: rect.left,
-        width: rect.width,
-        height: rect.height,
-      });
       setOfferLayout({
         left: handRect.left,
         width: handRect.width,
@@ -43,7 +35,6 @@ export function TradePanel({ game, give, onRemoveGive, onResetGive, onClose }: {
     };
     measure();
     const observer = new ResizeObserver(measure);
-    observer.observe(button);
     observer.observe(hand);
     window.addEventListener('resize', measure);
     return () => {
@@ -58,6 +49,7 @@ export function TradePanel({ game, give, onRemoveGive, onResetGive, onClose }: {
   const removeWant = (resource: Resource) => setWant({ ...want, [resource]: Math.max(0, want[resource] - 1) });
   const chooseAny = () => setWantAny((current) => current + 1);
   const removeAny = () => setWantAny((current) => Math.max(0, current - 1));
+  const resetAll = () => { setWant(zeroBag()); setWantAny(0); onResetGive(); };
 
   const offeredTypes = RESOURCES.filter((resource) => give[resource] > 0);
   const requestedTypes = RESOURCES.filter((resource) => want[resource] > 0);
@@ -70,17 +62,16 @@ export function TradePanel({ game, give, onRemoveGive, onResetGive, onClose }: {
 
   const tradeWithBank = () => {
     if (!bankGive || !bankReceive) return;
-    if (dispatch({ type: 'bankTrade', give: bankGive, receive: bankReceive })) onResetGive();
+    if (dispatch({ type: 'bankTrade', give: bankGive, receive: bankReceive, player: humanId })) onResetGive();
   };
   const tradeWithPlayers = () => {
-    if (dispatch({ type: 'createTradeOffer', give, receive: want, anyCount: wantAny })) {
-      onResetGive();
-      onClose();
+    if (dispatch({ type: 'createTradeOffer', give, receive: want, anyCount: wantAny, player: humanId })) {
+      resetAll();
     }
   };
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-30">
+    <div data-trade-panel className="pointer-events-none fixed inset-0 z-30">
       <motion.section
         initial={{ y: 40, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
@@ -90,7 +81,8 @@ export function TradePanel({ game, give, onRemoveGive, onResetGive, onClose }: {
       >
         <header className="mb-2.5 flex items-center gap-2 border-b border-ink/10 pb-2 dark:border-white/10">
           <h2 className="font-display text-xl font-extrabold">Trade offer</h2>
-          <button type="button" onClick={onClose} aria-label="Close trade panel" className={`${BTN} ml-auto h-8 w-8 shrink-0 bg-card-alt text-ink hover:bg-ink/10`}>×</button>
+          <button type="button" onClick={resetAll} className={`${BTN} ml-auto min-h-11 px-3 text-xs text-ink-soft hover:bg-ink/10`}>Reset</button>
+          <button type="button" onClick={onClose} aria-label="Close trade panel" className={`${BTN} h-11 w-11 shrink-0 bg-card-alt text-ink hover:bg-ink/10`}>×</button>
         </header>
 
         <div className="space-y-2">
@@ -102,13 +94,14 @@ export function TradePanel({ game, give, onRemoveGive, onResetGive, onClose }: {
             <div className="border-t border-ink/5 pt-1.5 dark:border-white/10"><OfferRow label="You give" bag={give} onRemove={onRemoveGive} /></div>
             </div>
           </div>
+          <p role="status" className="min-h-4 text-[11px] font-bold text-ink-soft">{overlaps ? 'The same resource cannot be on both sides.' : bankGive ? `Bank rate: ${bankRate}:1 ${bankGive}.` : playersReady ? 'Ready to offer to players.' : 'Choose cards for both sides.'}</p>
+          <div className="grid grid-cols-2 gap-2 border-t border-ink/10 pt-2 dark:border-white/10">
+            <TradeAction title={bankGive ? `Bank rate: ${bankRate}:1 ${bankGive}` : 'Bank trade'} icon="🏦" label="Bank" enabled={bankReady} onClick={tradeWithBank} />
+            <TradeAction title="Offer to players" iconSrc={LARGEST_ARMY} label="Players" enabled={playersReady} onClick={tradeWithPlayers} />
+          </div>
         </div>
 
       </motion.section>
-      <div className="pointer-events-auto absolute flex flex-col gap-3 rounded-2xl bg-card p-2 shadow-panel ring-1 ring-black/5 dark:ring-white/15" style={{ left: dockAction.left - 8, bottom: offerLayout.bottom }}>
-        <TradeAction size={dockAction} title={bankGive ? `Bank rate: ${bankRate}:1 ${bankGive}` : 'Bank trade'} icon="🏦" label="Bank" enabled={bankReady} onClick={tradeWithBank} />
-        <TradeAction size={dockAction} title="Offer to players" iconSrc={LARGEST_ARMY} label="Players" enabled={playersReady} onClick={tradeWithPlayers} />
-      </div>
     </div>
   );
 }
@@ -120,7 +113,7 @@ function OfferRow({ label, bag, anyCount = 0, onRemove, onRemoveAny }: { label: 
       <span className="mb-1 block text-[10px] font-extrabold uppercase tracking-wide text-ink-faint">{label}</span>
       <div className="flex min-h-14 items-center gap-2 overflow-x-auto">
         {cards.length === 0 && anyCount === 0 ? <span className="pl-1 text-xs font-semibold text-ink-faint">Choose cards below</span> : <>
-          {cards.map((resource) => <StackedCard key={resource} src={RESOURCE_CARD[resource]} alt={resource} count={bag[resource]} direction="left" title={`Remove ${resource}`} onClick={() => onRemove(resource)} />)}
+          {cards.map((resource) => <StackedCard key={resource} sprite={RESOURCE_CARD_FRAME[resource]} alt={resource} count={bag[resource]} direction="left" title={`Remove ${resource}`} onClick={() => onRemove(resource)} />)}
           {anyCount > 0 && <StackedCard src={CARD_HIDDEN} alt="Any card request" count={anyCount} direction="left" title="Remove any card request" onClick={onRemoveAny ?? (() => undefined)} />}
         </>}
       </div>
@@ -143,17 +136,18 @@ function ResourcePicker({ label, onPick, onAny, disabled = [] }: { label: string
 }
 
 function ResourceButton({ resource, onClick, disabled = false }: { resource: Resource; onClick: () => void; disabled?: boolean }) {
-  return <button type="button" onClick={onClick} disabled={disabled} title={resource} className="shrink-0 rounded-md transition hover:-translate-y-0.5 hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-35"><img src={RESOURCE_CARD[resource]} alt={resource} className="h-14 w-10 rounded-md object-contain" draggable={false} /></button>;
+  return <button type="button" onClick={onClick} disabled={disabled} title={resource} className="shrink-0 rounded-md transition hover:-translate-y-0.5 hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-35"><PackedSprite name={RESOURCE_CARD_FRAME[resource]} alt={resource} className="h-14 w-10 rounded-md object-contain" /></button>;
 }
 
 function QuestionCard() {
   return <img src={CARD_HIDDEN} alt="Any card" className="h-14 w-10 rounded-md object-contain shadow-sm" draggable={false} />;
 }
 
-function TradeAction({ title, icon, iconSrc, label, enabled, onClick, size }: { title: string; icon?: string; iconSrc?: string; label: string; enabled: boolean; onClick: () => void; size: { width: number; height: number } }) {
+function TradeAction({ title, icon, iconSrc, label, enabled, onClick }: { title: string; icon?: string; iconSrc?: string; label: string; enabled: boolean; onClick: () => void }) {
   return (
-    <button type="button" title={title} aria-label={label} disabled={!enabled} onClick={onClick} style={size} className={`${BTN} px-1 py-2 ${enabled ? 'bg-p-green text-white shadow-soft hover:-translate-y-0.5 hover:brightness-105' : 'bg-card-alt text-ink-faint'}`}>
-      {iconSrc ? <img src={iconSrc} alt="" className="h-10 w-10 object-contain" draggable={false} /> : <span className="text-3xl leading-none">{icon}</span>}
+    <button type="button" title={title} aria-label={label} disabled={!enabled} onClick={onClick} className={`${BTN} min-h-14 gap-2 px-3 py-2 ${enabled ? 'bg-p-green text-white shadow-soft hover:-translate-y-0.5 hover:brightness-105' : 'bg-card-alt text-ink-faint'}`}>
+      {iconSrc ? <img src={iconSrc} alt="" className="h-8 w-8 object-contain" draggable={false} /> : <span className="text-2xl leading-none">{icon}</span>}
+      <span className="text-xs font-extrabold">{label}</span>
     </button>
   );
 }

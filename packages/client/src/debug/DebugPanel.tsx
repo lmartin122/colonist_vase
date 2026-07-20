@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import type { DevCardType } from '@colonist/shared';
-import { RESOURCES } from '@colonist/shared';
-import { RESOURCE_CARD } from '../assets';
+import { isConcurrentPhase, RESOURCES, type DevCardType } from '@colonist/shared';
+import { RESOURCE_CARD_FRAME } from '../assets';
 import { useGame } from '../state/store';
+import { PackedSprite } from '../ui/PackedSprite';
 
 const DEV_CARDS: { value: DevCardType; label: string }[] = [
   { value: 'knight', label: 'Knight' },
@@ -30,7 +30,8 @@ export function DebugPanel() {
   const [devCard, setDevCard] = useState<DevCardType>('knight');
 
   if (!enabled || !game || game.phase === 'gameOver') return null;
-  const canTriggerRobber = game.currentPlayer === humanId && (game.phase === 'roll' || game.phase === 'main');
+  const concurrent = isConcurrentPhase(game);
+  const canTriggerRobber = (concurrent || game.currentPlayer === humanId) && (concurrent || game.phase === 'roll' || game.phase === 'main');
   const infiniteForCurrentTurn = infiniteTimer?.player === game.currentPlayer && infiniteTimer.turn === game.turn;
 
   return (
@@ -61,7 +62,7 @@ export function DebugPanel() {
                 onClick={(event) => dispatch({ type: 'debugAddResources', player: humanId, resources: { [item]: event.shiftKey ? 5 : 1 } })}
                 className="rounded-xl bg-card-alt p-1.5 transition hover:-translate-y-0.5 hover:bg-ink/10 hover:shadow-soft"
               >
-                <img src={RESOURCE_CARD[item]} alt={`Add ${item}`} className="h-12 w-9 rounded-md object-contain" draggable={false} />
+                <PackedSprite name={RESOURCE_CARD_FRAME[item]} alt={`Add ${item}`} className="h-12 w-9 rounded-md object-contain" />
               </button>
             ))}
           </div>

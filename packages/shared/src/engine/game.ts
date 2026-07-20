@@ -25,6 +25,7 @@ export interface GameConfig {
 }
 
 export const DEFAULT_RULES: GameRules = {
+  mode: 'classic',
   turnTimer: 60,
   victoryPoints: 10,
   discardLimit: 7,
@@ -58,6 +59,9 @@ function emptyPlayerStats(): PlayerStats {
 /** Build the initial GameState, beginning with the roll for placement order. */
 export function createGame(config: GameConfig): GameState {
   const rules = { ...DEFAULT_RULES, ...config.rules };
+  if (rules.mode !== 'classic' && rules.mode !== 'rush') {
+    throw new RangeError(`Unknown game mode: ${String(rules.mode)}`);
+  }
   if (!Number.isInteger(rules.victoryPoints) || rules.victoryPoints < 3 || rules.victoryPoints > MAX_VICTORY_POINTS) {
     throw new RangeError(`Victory points must be a whole number from 3 to ${MAX_VICTORY_POINTS}`);
   }
@@ -107,10 +111,12 @@ export function createGame(config: GameConfig): GameState {
     setup: null,
     pending: {
       discards: {},
-      freeRoads: 0,
-      playedDevThisTurn: false,
+      freeRoads: {},
+      playedDevThisTurn: {},
       hasRolled: false,
-      botTradeOfferedThisTurn: false,
+      botTradeOfferedThisTurn: {},
+      passed: {},
+      roundCaptain: players[0].id,
     },
     tradeOffers: [],
     nextTradeOfferId: 1,

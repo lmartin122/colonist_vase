@@ -5,6 +5,7 @@ export * from './rng';
 export * from './board';
 export * from './placement';
 export * from './game';
+export * from './modes';
 export * from './actions';
 export * from './reduce';
 export * from './helpers';
