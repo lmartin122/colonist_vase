@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { botHasMoveAvailable, createGame, isConcurrentPhase, nextBotAction, reduce } from '@colonist/shared';
+import { botHasMoveAvailable, createGame, isConcurrentPhase, isOfferFullyDeclined, nextBotAction, reduce } from '@colonist/shared';
 import type { Action, GameConfig, GameState } from '@colonist/shared';
 import { sendGameAction } from '../net/socket';
 import { deriveFlights, emitFlights } from './flights';
@@ -85,6 +85,11 @@ let botRunning = false;
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Keep a fully-declined offer visible this long before clearing it, so the
+ *  human notices the rejection instead of it vanishing on the last decline. */
+const OFFER_EXPIRE_MS = 2_000;
+const offerTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
 /** Select the next bot that can make progress without waiting on the human. */
 export function automatedActor(game: GameState, humanId: number): number | null {
   if (game.phase === 'gameOver') return null;
@@ -130,6 +135,23 @@ function simulationAction(game: GameState, humanId: number): Action | null {
 }
 
 export const useGame = create<Store>((set, get) => {
+  /** Local play owns its own runtime, so it clears declined offers itself.
+   *  Online play leaves this to the authoritative server. */
+  function scheduleOfferExpiry(): void {
+    const { game, mode } = get();
+    if (!game || mode !== 'local') return;
+    for (const offer of game.tradeOffers) {
+      if (!isOfferFullyDeclined(offer) || offerTimers.has(offer.id)) continue;
+      offerTimers.set(offer.id, setTimeout(() => {
+        offerTimers.delete(offer.id);
+        const current = get().game;
+        if (!current || get().mode !== 'local') return;
+        const result = reduce(current, { type: 'expireTradeOffer', offerId: offer.id });
+        if (result.ok) set({ game: result.state });
+      }, OFFER_EXPIRE_MS));
+    }
+  }
+
   const timingFor = (game: GameState, recordStats = true) => {
     if (game.phase !== 'gameOver') return { matchEndedAt: null };
     const endedAt = get().matchEndedAt ?? Date.now();
@@ -172,6 +194,7 @@ export const useGame = create<Store>((set, get) => {
         set({ game: result.state, ...timingFor(result.state) });
         emitFlights(deriveFlights(current, result.state, action, humanId));
         playSounds(deriveSounds(current, result.state, action, humanId));
+        scheduleOfferExpiry();
       }
     } finally {
       botRunning = false;
@@ -287,6 +310,7 @@ export const useGame = create<Store>((set, get) => {
       set({ game: result.state, error: null, build: null, ...timingFor(result.state) });
       emitFlights(deriveFlights(game, result.state, action, get().humanId));
       playSounds(deriveSounds(game, result.state, action, get().humanId));
+      scheduleOfferExpiry();
       void runBots();
       return true;
     },

@@ -10,6 +10,7 @@ import {
   botAcceptsTrade,
   bankTradeRatio,
   canAfford,
+  isOfferFullyDeclined,
   isResource,
   resourceBundlesOverlap,
   resourceBundleTotal,
@@ -136,6 +137,8 @@ function apply(state: GameState, action: Action): GameState {
       return completeTradeOffer(state, action.offerId, action.partner, action.player);
     case 'cancelTradeOffer':
       return cancelTradeOffer(state, action.offerId, action.player);
+    case 'expireTradeOffer':
+      return expireTradeOffer(state, action.offerId);
     case 'debugAddResources':
       return debugAddResources(state, action.player, action.resources);
     case 'debugGrantDevCard':
@@ -1083,6 +1086,23 @@ function cancelTradeOffer(state: GameState, offerId: number, requestedPlayer?: n
   if (!offer) fail('Trade offer no longer exists');
   if (offer.proposer !== proposer) fail('Only the current proposer can cancel this offer');
   return log({ ...state, tradeOffers: state.tradeOffers.filter((item) => item.id !== offerId) }, `${playerName(state, offer.proposer)} cancelled a trade offer`, proposer);
+}
+
+/**
+ * Drop an offer that every asked player declined. Deliberately NOT folded into
+ * `respondTradeOffer`: the offer survives the last decline so the proposer can
+ * see the rejection, and the host runtime clears it a couple of seconds later.
+ */
+function expireTradeOffer(state: GameState, offerId: number): GameState {
+  if (!Number.isInteger(offerId)) fail('Unknown trade offer');
+  const offer = state.tradeOffers.find((item) => item.id === offerId);
+  if (!offer) fail('Trade offer no longer exists');
+  if (!isOfferFullyDeclined(offer)) fail('Someone can still take this offer');
+  return log(
+    { ...state, tradeOffers: state.tradeOffers.filter((item) => item.id !== offerId) },
+    `Everyone declined ${playerName(state, offer.proposer)}'s trade offer`,
+    offer.proposer,
+  );
 }
 
 /** Auto-decline `player`'s still-pending response on anyone else's offer —

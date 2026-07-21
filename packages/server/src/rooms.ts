@@ -56,6 +56,8 @@ export interface Room {
   chat: ChatMessage[];
   /** Monotonic id source for chat messages. */
   chatSeq: number;
+  /** Pending "play again" proposal, keyed by seat. */
+  rematch: { proposedBy: number; votes: Record<number, 'pending' | 'yes' | 'no'> } | null;
 }
 
 /** Keep seat numbers contiguous after lobby changes without overwriting chosen colors. */
@@ -86,6 +88,7 @@ export function snapshot(room: Room): RoomSnapshot {
     ready: s.ready,
     userId: s.userId,
   }));
+  const proposer = room.rematch ? room.seats.find((s) => s.seat === room.rematch!.proposedBy) : undefined;
   return {
     code: room.code,
     phase: room.phase,
@@ -94,6 +97,17 @@ export function snapshot(room: Room): RoomSnapshot {
     rules: room.rules,
     layout: room.layout,
     maxPlayers: room.maxPlayers,
+    rematch: room.rematch
+      ? {
+          proposedBy: room.rematch.proposedBy,
+          proposedByName: proposer?.name ?? 'A player',
+          votes: Object.entries(room.rematch.votes).map(([seat, vote]) => ({
+            seat: Number(seat),
+            name: room.seats.find((s) => s.seat === Number(seat))?.name ?? '',
+            vote,
+          })),
+        }
+      : null,
   };
 }
 
@@ -102,6 +116,18 @@ export class RoomManager {
 
   get(code: string): Room | undefined {
     return this.rooms.get(code.toUpperCase());
+  }
+
+  /**
+   * The still-active room this account holds a seat in, if any. Seats are keyed
+   * by userId and are reserved when a player leaves mid-game (a bot takes over),
+   * so this is what lets "Rejoin" work from a fresh tab or another device.
+   */
+  findByUser(userId: string): Room | undefined {
+    for (const room of this.rooms.values()) {
+      if (room.phase !== 'over' && seatOfUser(room, userId)) return room;
+    }
+    return undefined;
   }
 
   create(hostUserId: string, hostName: string, opts: { rules?: Partial<GameRules>; layout?: string }): Room {
@@ -125,6 +151,7 @@ export class RoomManager {
       createdAt: Date.now(),
       chat: [],
       chatSeq: 0,
+      rematch: null,
     };
     this.rooms.set(code, room);
     this.addHuman(room, hostUserId, hostName);
@@ -384,6 +411,77 @@ export class RoomManager {
     room.startedAt = Date.now();
     room.phase = 'playing';
     return null;
+  }
+
+  /**
+   * Offer a rematch after a finished game. Every OTHER connected human is asked
+   * to opt in, so nobody is dragged into a new match they'd have to abandon.
+   */
+  proposeRematch(room: Room, userId: string): string | null {
+    if (room.phase !== 'over') return 'The game is not over yet';
+    if (room.rematch) return 'A rematch has already been proposed';
+    const proposer = seatOfUser(room, userId);
+    if (!proposer || proposer.isBot) return 'You have no seat in this game';
+    const votes: Record<number, 'pending' | 'yes' | 'no'> = { [proposer.seat]: 'yes' };
+    for (const seat of room.seats) {
+      if (seat.isBot || seat.seat === proposer.seat) continue;
+      if (seat.connected) votes[seat.seat] = 'pending';
+    }
+    room.rematch = { proposedBy: proposer.seat, votes };
+    return null;
+  }
+
+  respondRematch(room: Room, userId: string, accept: boolean): string | null {
+    if (!room.rematch) return 'No rematch was proposed';
+    const seat = seatOfUser(room, userId);
+    if (!seat || room.rematch.votes[seat.seat] === undefined) return 'You were not asked';
+    room.rematch.votes[seat.seat] = accept ? 'yes' : 'no';
+    return null;
+  }
+
+  /** True once nobody still connected owes an answer. */
+  rematchSettled(room: Room): boolean {
+    if (!room.rematch) return false;
+    return Object.entries(room.rematch.votes).every(([seat, vote]) => {
+      if (vote !== 'pending') return true;
+      // A player who dropped out mid-vote no longer blocks the rematch.
+      return !room.seats.find((s) => s.seat === Number(seat))?.connected;
+    });
+  }
+
+  /**
+   * Apply a settled rematch: keep bots and the humans who accepted, drop the
+   * rest, and hand the room back to the lobby. Returns false (caller should drop
+   * the room) when no human wants to continue.
+   */
+  applyRematch(room: Room): boolean {
+    const votes = room.rematch?.votes ?? {};
+    // Keep real bots and the humans who opted in; a seat a bot took over for a
+    // departed player goes away with them.
+    room.seats = room.seats.filter(
+      (seat) => (seat.isBot && !seat.abandoned) || votes[seat.seat] === 'yes',
+    );
+    room.rematch = null;
+    if (!room.seats.some((seat) => !seat.isBot)) return false;
+    if (!room.seats.some((seat) => seat.userId === room.hostUserId)) {
+      const nextHost = room.seats.find((seat) => !seat.isBot && seat.userId);
+      if (nextHost?.userId) room.hostUserId = nextHost.userId;
+    }
+    for (const seat of room.seats) {
+      seat.ready = seat.isBot;
+      seat.abandoned = false;
+    }
+    reindex(room);
+    room.phase = 'lobby';
+    room.state = null;
+    room.seed = null;
+    room.startedAt = null;
+    room.runtimeVersion += 1;
+    return true;
+  }
+
+  cancelRematch(room: Room): void {
+    room.rematch = null;
   }
 
   delete(code: string): void {

@@ -18,6 +18,7 @@ describe('server profile statistics', () => {
       playerTrades: 2,
     };
     const row: StatsRow = {
+      id: 'game-1',
       roomCode: 'ABC234',
       winnerId: 'user-a',
       mode: 'classic',
@@ -51,5 +52,37 @@ describe('server profile statistics', () => {
     expect(stats.diceRolls).toMatchObject({ 6: 3, 8: 2 });
     expect(stats.matchStats).toMatchObject({ roadsPlaced: 4, playerTrades: 2 });
     expect(stats.matchStats.resourcesCollected.wood).toBe(7);
+  });
+
+  it('counts every rematch played in the same room as its own game', () => {
+    const base = {
+      roomCode: 'ABC234',
+      winnerId: 'user-a',
+      mode: 'classic',
+      startedAt: new Date('2026-07-20T12:00:00Z'),
+      endedAt: new Date('2026-07-20T12:30:00Z'),
+      diceStats: {},
+      players: [{
+        userId: 'user-a',
+        finalVp: 10,
+        stats: {},
+        longestRoadLength: 5,
+        longestRoadAward: false,
+        largestArmyAward: false,
+        abandoned: false,
+      }],
+    };
+    // A room keeps its code across rematches; these are two distinct games.
+    const rows: StatsRow[] = [
+      { ...base, id: 'game-1' },
+      { ...base, id: 'game-2', startedAt: new Date('2026-07-20T13:00:00Z'), endedAt: new Date('2026-07-20T13:30:00Z') },
+    ];
+
+    const stats = aggregateUserStats(rows, 'user-a');
+
+    expect(stats.gamesPlayed).toBe(2);
+    expect(stats.wins).toBe(2);
+    expect(stats.totalVictoryPoints).toBe(20);
+    expect(stats.totalDurationMs).toBe(60 * 60 * 1000);
   });
 });

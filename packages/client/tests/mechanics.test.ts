@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createGame } from '@colonist/shared';
 import { applyOrThrow, reduce } from '@colonist/shared';
 import { longestRoadLength } from '@colonist/shared';
-import { bankTradeRatio, totalResources, victoryPoints } from '@colonist/shared';
+import { bankTradeRatio, isOfferFullyDeclined, totalResources, victoryPoints } from '@colonist/shared';
 import type { DevCardType, GameState, Resource } from '@colonist/shared';
 import { legalRoadEdges, robberTargetTiles, stealableOpponents } from '@colonist/shared';
 import { nextBotAction } from '@colonist/shared';
@@ -109,6 +109,49 @@ describe('trade offers', () => {
     s = applyOrThrow(s, { type: 'createTradeOffer', give: { ore: 1 }, receive: { sheep: 1 }, anyCount: 0 });
     s = applyOrThrow(s, { type: 'respondTradeOffer', offerId: s.tradeOffers[0].id, responder: 1, accepted: false });
     expect(s.tradeOffers[0].responses[1].status).toBe('declined');
+  });
+
+  it('survives the last decline so the proposer sees it, then expires', () => {
+    let s = autoSetup(game(18));
+    s = {
+      ...s,
+      currentPlayer: 0,
+      phase: 'main',
+      players: s.players.map((player) => player.id === 1 ? { ...player, isBot: false, botDifficulty: null } : player),
+    };
+    s = setRes(s, 0, { ore: 1 });
+    s = setRes(s, 1, { sheep: 1 });
+    s = applyOrThrow(s, { type: 'createTradeOffer', give: { ore: 1 }, receive: { sheep: 1 }, anyCount: 0 });
+    const offerId = s.tradeOffers[0].id;
+
+    // Cannot be expired while anyone might still take it.
+    expect(reduce(s, { type: 'expireTradeOffer', offerId }).ok).toBe(false);
+
+    s = applyOrThrow(s, { type: 'respondTradeOffer', offerId, responder: 1, accepted: false });
+    // Still present right after the last decline — that is what makes it visible.
+    expect(isOfferFullyDeclined(s.tradeOffers[0])).toBe(true);
+
+    s = applyOrThrow(s, { type: 'expireTradeOffer', offerId });
+    expect(s.tradeOffers).toHaveLength(0);
+    expect(s.log.at(-1)?.message).toContain('Everyone declined');
+  });
+
+  it('does not expire an offer somebody accepted', () => {
+    let s = autoSetup(game(15));
+    s = {
+      ...s,
+      currentPlayer: 0,
+      phase: 'main',
+      players: s.players.map((player) => player.id === 1 ? { ...player, isBot: false, botDifficulty: null } : player),
+    };
+    s = setRes(s, 0, { ore: 1 });
+    s = setRes(s, 1, { sheep: 1 });
+    s = applyOrThrow(s, { type: 'createTradeOffer', give: { ore: 1 }, receive: { sheep: 1 }, anyCount: 0 });
+    const offerId = s.tradeOffers[0].id;
+    s = applyOrThrow(s, { type: 'respondTradeOffer', offerId, responder: 1, accepted: true });
+
+    expect(isOfferFullyDeclined(s.tradeOffers[0])).toBe(false);
+    expect(reduce(s, { type: 'expireTradeOffer', offerId }).ok).toBe(false);
   });
 
   it('stores responses, completes a selected acceptance, and clears offers at turn end', () => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { CARD_HIDDEN, RESOURCE_CARD_FRAME } from '../assets';
-import { RESOURCES, canAfford, isConcurrentPhase } from '@colonist/shared';
+import { RESOURCES, canAfford, isConcurrentPhase, isOfferFullyDeclined } from '@colonist/shared';
 import type { GameState, Player, Resource, TradeOffer } from '@colonist/shared';
 import { PLAYER_CSS } from '../render/palette';
 import { useGame } from '../state/store';
@@ -72,9 +72,17 @@ function IncomingOffer({ offer, game, humanId, canRespond, onRespond }: { offer:
 }
 
 function OutgoingOffer({ offer, game, canManage, onChoose, onCancel }: { offer: TradeOffer; game: GameState; canManage: boolean; onChoose: (partner: number) => void; onCancel: () => void }) {
+  // Everyone said no: the runtime clears this shortly, so make the rejection
+  // unmistakable while it is still on screen.
+  const rejected = isOfferFullyDeclined(offer);
   return (
-    <section className="rounded-2xl bg-card p-2.5 text-ink shadow-panel ring-1 ring-ink/10 dark:ring-white/15">
+    <section className={`rounded-2xl bg-card p-2.5 text-ink shadow-panel ring-1 transition ${rejected ? 'ring-2 ring-p-red' : 'ring-ink/10 dark:ring-white/15'}`}>
       <div className="flex items-stretch gap-1.5"><TradeSide><TradeCards bag={offer.give} /></TradeSide><span className="flex w-6 items-center justify-center text-ink-faint">→</span><TradeSide><TradeCards bag={offer.receive} anyCount={offer.anyCount} /></TradeSide></div>
+      {rejected && (
+        <p role="status" className="mt-2 rounded-lg bg-p-red/10 px-2 py-1 text-center text-xs font-extrabold text-p-red">
+          Everyone declined
+        </p>
+      )}
       <div className="mt-2.5 border-t border-ink/10 pt-2 dark:border-white/10">
         <p className="mb-1.5 text-[9px] font-extrabold uppercase tracking-[0.14em] text-ink-faint">Responses</p>
         <div className="flex flex-wrap gap-1.5">

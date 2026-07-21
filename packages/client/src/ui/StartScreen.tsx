@@ -61,7 +61,7 @@ function DevStartScreen() {
   const getToken = useCallback(async () => `${id}:${name ?? 'Player'}`, [id, name]);
 
   useEffect(() => {
-    if (name) connect(`${id}:${name}`);
+    if (name) connect(`${id}:${name}`, name);
   }, [connect, id, name]);
 
   return (
@@ -105,13 +105,14 @@ function AuthStartScreen() {
     let cancelled = false;
     getAccessTokenSilently()
       .then((token) => {
-        if (!cancelled) connect(token);
+        // Auth0 access tokens carry no profile claims, so pass the ID-token name.
+        if (!cancelled) connect(token, user?.name ?? user?.nickname ?? '');
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [connect, getAccessTokenSilently, isAuthenticated]);
+  }, [connect, getAccessTokenSilently, isAuthenticated, user]);
 
   return (
     <StartScreenContent

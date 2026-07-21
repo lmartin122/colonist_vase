@@ -63,6 +63,14 @@ function OnlineGameContent() {
     });
   }, [abandonGame, activeCode, code, navigate, room, setCode, setSeat]);
 
+  // A settled rematch hands the room back to the lobby: drop the finished game
+  // so the start screen (not the board) renders at /room/:code.
+  useEffect(() => {
+    if (room?.code !== code || room.phase !== 'lobby') return;
+    abandonGame();
+    navigate(`/room/${code}`, { replace: true });
+  }, [abandonGame, code, navigate, room]);
+
   const ready = game && activeCode === code && room?.code === code && room.phase !== 'lobby';
   return ready ? <GameShell /> : <WaitingForGame code={code} />;
 }

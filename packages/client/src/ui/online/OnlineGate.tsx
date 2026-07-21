@@ -44,7 +44,7 @@ function DevGate({ children }: { children: ReactNode }) {
   const [draft, setDraft] = useState('');
 
   useEffect(() => {
-    if (name) connect(`${id}:${name}`);
+    if (name) connect(`${id}:${name}`, name);
   }, [id, name, connect]);
 
   if (!name) {
@@ -93,7 +93,7 @@ function Connecting() {
 }
 
 function AuthedGate({ children }: { children: ReactNode }) {
-  const { isLoading, isAuthenticated, loginWithRedirect, getAccessTokenSilently } = useAuth0();
+  const { user, isLoading, isAuthenticated, loginWithRedirect, getAccessTokenSilently } = useAuth0();
   const connect = useOnline((s) => s.connect);
   const status = useOnline((s) => s.status);
 
@@ -102,13 +102,13 @@ function AuthedGate({ children }: { children: ReactNode }) {
     let cancelled = false;
     getAccessTokenSilently()
       .then((token) => {
-        if (!cancelled) connect(token);
+        if (!cancelled) connect(token, user?.name ?? user?.nickname ?? '');
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, getAccessTokenSilently, connect]);
+  }, [isAuthenticated, getAccessTokenSilently, connect, user]);
 
   if (isLoading) return <Card><p className="text-ink-soft">Loading…</p></Card>;
 

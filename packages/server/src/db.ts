@@ -55,8 +55,12 @@ export async function recordFinishedGame(room: Room): Promise<void> {
   const winnerSeatState = winnerSeat != null ? room.seats[winnerSeat] : undefined;
   const winnerAuth0 = winnerSeatState && !winnerSeatState.abandoned ? winnerSeatState.userId : null;
 
+  const startedAt = new Date(room.startedAt ?? Date.now());
   try {
-    const existing = await prisma.game.findUnique({ where: { roomCode: room.code } });
+    // A rematch reuses the room code, so idempotency is per (room, start time).
+    const existing = await prisma.game.findUnique({
+      where: { roomCode_startedAt: { roomCode: room.code, startedAt } },
+    });
     if (existing) return;
     await Promise.all(room.seats.flatMap((seat) => seat.userId
       ? [prisma.user.upsert({
@@ -72,7 +76,7 @@ export async function recordFinishedGame(room: Room): Promise<void> {
         layout: room.layout,
         mode: state.rules.mode,
         diceStats: state.diceStats,
-        startedAt: new Date(room.startedAt ?? Date.now()),
+        startedAt,
         endedAt: new Date(),
         winner: winnerAuth0 ? { connect: { auth0Sub: winnerAuth0 } } : undefined,
         players: {
@@ -167,6 +171,7 @@ export interface ServerProfileStats {
 }
 
 export interface StatsRow {
+  id: string;
   roomCode: string;
   winnerId: string | null;
   mode: string;
@@ -185,7 +190,8 @@ export interface StatsRow {
 }
 
 /** Pure aggregation used by the API and regression tests. One database game
- * contributes at most one result, regardless of disconnect/rejoin count. */
+ * contributes at most one result, regardless of disconnect/rejoin count.
+ * Keyed by game id, not room code — a room hosts one game per rematch. */
 export function aggregateUserStats(rows: StatsRow[], userId: string): ServerProfileStats {
   const result: ServerProfileStats = {
     gamesPlayed: 0,
@@ -205,12 +211,12 @@ export function aggregateUserStats(rows: StatsRow[], userId: string): ServerProf
     diceRolls: Object.fromEntries(Array.from({ length: 11 }, (_, index) => [index + 2, 0])),
     matchStats: emptyPlayerStats(),
   };
-  const countedRooms = new Set<string>();
+  const countedGames = new Set<string>();
   for (const game of rows) {
-    if (countedRooms.has(game.roomCode)) continue;
+    if (countedGames.has(game.id)) continue;
     const player = game.players.find((candidate) => candidate.userId === userId);
     if (!player) continue;
-    countedRooms.add(game.roomCode);
+    countedGames.add(game.id);
     const won = game.winnerId === userId;
     const classic = game.mode !== 'rush';
     result.gamesPlayed += 1;

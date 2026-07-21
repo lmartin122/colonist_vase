@@ -36,6 +36,10 @@ export type Action =
   | { type: 'respondTradeOffer'; offerId: number; responder: number; accepted: boolean; wildcardResource?: Resource }
   | { type: 'completeTradeOffer'; offerId: number; partner: number; player?: number }
   | { type: 'cancelTradeOffer'; offerId: number; player?: number }
+  /** Clear an offer everyone declined. Driven by the host runtime (server in
+   *  online play, store in local play) a beat after the last decline, never by a
+   *  network client — see `authorizeSeat`. */
+  | { type: 'expireTradeOffer'; offerId: number }
   // Debug-only developer tools. Kept in the reducer so debug state changes remain deterministic.
   | { type: 'debugAddResources'; player: number; resources: Partial<Record<Resource, number>> }
   | { type: 'debugGrantDevCard'; player: number; card: DevCardType }

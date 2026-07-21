@@ -9,6 +9,7 @@ import type {
   Player,
   Resource,
   ResourceBank,
+  TradeOffer,
 } from './types';
 import { RESOURCES, emptyBank } from './types';
 
@@ -150,4 +151,14 @@ export function currentPlayer(state: GameState): Player {
 
 export function isLargestArmyEligible(knights: number): boolean {
   return knights >= LARGEST_ARMY_MIN;
+}
+
+/**
+ * True when every player who was asked declined, so the offer can never be
+ * completed. The offer is kept in state briefly (rather than vanishing on the
+ * last decline) so the proposer actually sees the rejection before it clears.
+ */
+export function isOfferFullyDeclined(offer: TradeOffer): boolean {
+  const responses = Object.values(offer.responses);
+  return responses.length > 0 && responses.every((response) => response.status === 'declined');
 }

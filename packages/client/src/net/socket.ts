@@ -16,14 +16,18 @@ export type GameSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 let socket: GameSocket | null = null;
 const REQUEST_TIMEOUT_MS = 8_000;
 
-/** Open (or reuse) the authenticated socket. Pass a fresh Auth0 access token. */
-export function connectSocket(token: string): GameSocket {
+/**
+ * Open (or reuse) the authenticated socket. Pass a fresh Auth0 access token.
+ * `name` is the display name from the ID token: Auth0 access tokens carry no
+ * profile claims, so the server uses this unless a verified name claim exists.
+ */
+export function connectSocket(token: string, name = ''): GameSocket {
   if (socket) {
-    socket.auth = { token };
+    socket.auth = { token, name };
     if (!socket.connected) socket.connect();
     return socket;
   }
-  socket = io(SERVER_URL, { auth: { token }, transports: ['websocket'], autoConnect: true });
+  socket = io(SERVER_URL, { auth: { token, name }, transports: ['websocket'], autoConnect: true });
   return socket;
 }
 
@@ -65,6 +69,8 @@ export const joinRoom = (code: string) =>
   request<{ code: string; seat: number; phase: RoomPhase }>('joinRoom', { code });
 export const watchGame = (code: string) =>
   request<{ code: string; seat: number | null }>('watchGame', { code });
+/** Ask the server which active room this account still holds a seat in. */
+export const findMyRoom = () => request<{ code: string; phase: RoomPhase } | null>('findMyRoom');
 export const leaveRoom = () => request<null>('leaveRoom');
 export const updateRoom = (payload: { rules?: Partial<GameRules>; layout?: string }) =>
   request<null>('updateRoom', payload);
@@ -76,4 +82,6 @@ export const setSeatColor = (seat: number, color: PlayerColor) =>
   request<null>('setSeatColor', { seat, color });
 export const removeSeat = (seat: number) => request<null>('removeSeat', { seat });
 export const startGame = () => request<null>('startGame');
+export const proposeRematch = () => request<null>('proposeRematch');
+export const respondRematch = (accept: boolean) => request<null>('respondRematch', { accept });
 export const sendChat = (text: string) => request<null>('sendChat', { text });

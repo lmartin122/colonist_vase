@@ -60,7 +60,7 @@ import {
   loadPanelLayout,
   savePanelLayout,
 } from './panelLayout';
-import { leaveRoom } from '../net/socket';
+import { leaveRoom, proposeRematch, respondRematch } from '../net/socket';
 import { useOnline } from '../state/online';
 
 type Bag = Record<Resource, number>;
@@ -354,6 +354,72 @@ function AbandonButton() {
           document.body,
         )}
     </>
+  );
+}
+
+/**
+ * "Play again" for online rooms. Proposing only *asks* the others: the room goes
+ * back to the lobby once everyone still connected has answered, keeping whoever
+ * opted in. Nobody is pulled into a match they'd have to abandon.
+ */
+function OnlineRematch() {
+  const room = useOnline((state) => state.room);
+  const mySeat = useOnline((state) => state.seat);
+  const spectating = useOnline((state) => state.spectating);
+  const [busy, setBusy] = useState(false);
+
+  if (!room || spectating || mySeat === null) return null;
+  const rematch = room.rematch;
+  const run = (action: () => Promise<{ ok: boolean }>) => {
+    setBusy(true);
+    void action().finally(() => setBusy(false));
+  };
+
+  if (!rematch) {
+    return (
+      <button
+        disabled={busy}
+        onClick={() => run(proposeRematch)}
+        className={`${BTN_BASE} bg-p-green px-5 py-2.5 text-sm text-white hover:-translate-y-0.5 hover:brightness-105 disabled:opacity-50`}
+      >
+        New game
+      </button>
+    );
+  }
+
+  const myVote = rematch.votes.find((vote) => vote.seat === mySeat)?.vote;
+  const accepted = rematch.votes.filter((vote) => vote.vote === 'yes').length;
+
+  if (myVote === 'pending') {
+    return (
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <span className="text-sm text-ink-soft">
+          <strong className="text-ink">{rematch.proposedByName}</strong> wants to play again
+        </span>
+        <button
+          disabled={busy}
+          onClick={() => run(() => respondRematch(true))}
+          className={`${BTN_BASE} bg-p-green px-5 py-2.5 text-sm text-white hover:-translate-y-0.5 hover:brightness-105 disabled:opacity-50`}
+        >
+          Join
+        </button>
+        <button
+          disabled={busy}
+          onClick={() => run(() => respondRematch(false))}
+          className={`${BTN_BASE} bg-card-alt px-5 py-2.5 text-sm text-ink hover:bg-ink/10 disabled:opacity-50`}
+        >
+          No thanks
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <span className="self-center text-sm text-ink-soft">
+      {myVote === 'no'
+        ? 'You sat this one out.'
+        : `Waiting for the others… ${accepted}/${rematch.votes.length} in`}
+    </span>
   );
 }
 
@@ -1650,7 +1716,7 @@ function VictoryOverlay({ game }: { game: GameState }) {
           >
             Main menu
           </button>
-          {mode === 'local' && (
+          {mode === 'local' ? (
             <button
               onClick={() =>
                 newGame({
@@ -1668,6 +1734,8 @@ function VictoryOverlay({ game }: { game: GameState }) {
             >
               Play again
             </button>
+          ) : (
+            <OnlineRematch />
           )}
         </div>
       </motion.div>

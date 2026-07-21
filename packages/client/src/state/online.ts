@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { MAX_CHAT_HISTORY, type ChatMessage, type RoomSnapshot } from '@colonist/shared';
-import { connectSocket, disconnectSocket, joinRoom, sendChat, watchGame } from '../net/socket';
+import { connectSocket, disconnectSocket, findMyRoom, joinRoom, sendChat, watchGame } from '../net/socket';
 import { useGame } from './store';
 
 export type ConnStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -38,7 +38,7 @@ interface OnlineState {
   /** Room chat, replayed by the server on join and appended live. */
   messages: ChatMessage[];
 
-  connect: (token: string) => void;
+  connect: (token: string, name?: string) => void;
   disconnect: () => void;
   setCode: (code: string | null) => void;
   setSeat: (seat: number | null) => void;
@@ -58,8 +58,8 @@ export const useOnline = create<OnlineState>((set, get) => ({
   error: null,
   messages: [],
 
-  connect(token) {
-    const socket = connectSocket(token);
+  connect(token, name = '') {
+    const socket = connectSocket(token, name);
     // Rebind cleanly so repeated connect() calls don't stack listeners.
     socket.off();
 
@@ -67,7 +67,7 @@ export const useOnline = create<OnlineState>((set, get) => ({
       set({ status: 'connected', error: null });
       // Reconnection: if we were in a room, transparently re-join it.
       const { code, spectating } = get();
-      if (code)
+      if (code) {
         void (spectating ? watchGame(code) : joinRoom(code)).then((result) => {
           if (result.ok) {
             set({ seat: result.data.seat, spectating: result.data.seat === null });
@@ -77,6 +77,15 @@ export const useOnline = create<OnlineState>((set, get) => ({
           if (window.location.pathname.startsWith('/room/') || window.location.pathname.startsWith('/game/'))
             window.history.replaceState(null, '', '/');
         });
+        return;
+      }
+      // No room in THIS tab: ask whether the account still holds a seat
+      // somewhere, so "Rejoin" survives a new tab, browser or device.
+      void findMyRoom().then((result) => {
+        if (!result.ok || !result.data || get().code) return;
+        rememberLastCode(result.data.code);
+        set({ lastCode: result.data.code });
+      });
     });
     socket.on('connect_error', (err) => set({ status: 'error', error: err.message }));
     socket.on('disconnect', () => set({ status: 'disconnected' }));

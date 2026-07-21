@@ -21,6 +21,12 @@ export const config = {
   auth: {
     domain: process.env.AUTH0_DOMAIN ?? '',
     audience: process.env.AUTH0_AUDIENCE ?? '',
+    /**
+     * Namespaced claim carrying the display name on the ACCESS token. Auth0 does
+     * not put `name`/`email` on access tokens; add them with a Login Action to
+     * make the name authoritative instead of client-supplied.
+     */
+    nameClaim: process.env.AUTH0_NAME_CLAIM ?? 'https://colonist-vase/name',
   },
   databaseUrl: process.env.DATABASE_URL ?? '',
   /** DEV ONLY: bypass Auth0 and accept a "userId:name" token. Never in prod. */

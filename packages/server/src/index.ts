@@ -5,6 +5,7 @@ import { Server } from 'socket.io';
 import {
   reduce,
   redactAction,
+  isOfferFullyDeclined,
   redactState,
   victoryPoints,
   type Action,
@@ -122,7 +123,9 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents, Record<string,
 io.use(async (socket, next) => {
   try {
     const token = String(socket.handshake.auth?.token ?? '');
-    const identity = await verifyToken(token);
+    // Cosmetic display name from the client's ID token; only used when the
+    // access token carries no verified name claim (see verifyToken).
+    const identity = await verifyToken(token, String(socket.handshake.auth?.name ?? ''));
     socket.data.userId = identity.userId;
     socket.data.name = identity.name;
     void upsertUser(identity.userId, identity.name);
@@ -169,6 +172,32 @@ function broadcastState(room: Room, action: Action | null = null, actorSeat: num
   }
 }
 
+/** How long a fully-declined offer stays visible before it is cleared. */
+const OFFER_EXPIRE_MS = 2_000;
+const offerTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * Once every asked player has declined, leave the offer up for a beat so the
+ * proposer actually sees the rejection, then clear it.
+ */
+function scheduleOfferExpiry(room: Room): void {
+  if (!room.state) return;
+  for (const offer of room.state.tradeOffers) {
+    if (!isOfferFullyDeclined(offer)) continue;
+    const key = `${room.code}:${offer.id}`;
+    if (offerTimers.has(key)) continue;
+    offerTimers.set(key, setTimeout(() => {
+      offerTimers.delete(key);
+      const current = rooms.get(room.code);
+      if (!current?.state) return;
+      const result = reduce(current.state, { type: 'expireTradeOffer', offerId: offer.id });
+      if (!result.ok) return;
+      current.state = result.state;
+      broadcastState(current);
+    }, OFFER_EXPIRE_MS));
+  }
+}
+
 /** Replay a room's recent chat straight to one socket (on join/watch). */
 function emitChatHistory(room: Room, socketId: string): void {
   io.to(socketId).emit('chatHistory', { messages: room.chat });
@@ -207,6 +236,7 @@ async function driveAndBroadcast(room: Room): Promise<void> {
     return;
   }
   room.state = settled;
+  scheduleOfferExpiry(room);
   await finishIfOver(room);
 }
 
@@ -269,6 +299,11 @@ io.on('connection', (socket) => {
     emitChatHistory(room, socket.id);
     socket.emit('gameState', { state: redactState(room.state, null), yourSeat: null, action: null });
     ack(ok({ code: room.code, seat: null }));
+  });
+
+  socket.on('findMyRoom', (ack) => {
+    const room = rooms.findByUser(userId);
+    ack(ok(room ? { code: room.code, phase: room.phase } : null));
   });
 
   socket.on('leaveRoom', (ack) => {
@@ -372,6 +407,46 @@ io.on('connection', (socket) => {
     await driveAndBroadcast(room);
   });
 
+  /** Settle a rematch once everyone still connected has answered. */
+  const settleRematch = (room: Room): void => {
+    if (!rooms.rematchSettled(room)) return broadcastRoom(room);
+    const accepted = room.rematch
+      ? Object.values(room.rematch.votes).filter((vote) => vote === 'yes').length
+      : 0;
+    if (accepted === 0) {
+      rooms.cancelRematch(room);
+      return broadcastRoom(room);
+    }
+    if (!rooms.applyRematch(room)) {
+      rooms.delete(room.code);
+      return;
+    }
+    io.to(room.code).emit('chat', rooms.systemChat(room, 'Back to the lobby for a new game.'));
+    broadcastRoom(room);
+  };
+
+  socket.on('proposeRematch', (ack) => {
+    const room = roomOf(socket.id);
+    if (!room) return ack(fail('Not in a room'));
+    const error = rooms.proposeRematch(room, userId);
+    if (error) return ack(fail(error));
+    ack(ok(null));
+    io.to(room.code).emit(
+      'chat',
+      rooms.systemChat(room, `${name} wants to play again.`),
+    );
+    settleRematch(room);
+  });
+
+  socket.on('respondRematch', ({ accept }, ack) => {
+    const room = roomOf(socket.id);
+    if (!room) return ack(fail('Not in a room'));
+    const error = rooms.respondRematch(room, userId, Boolean(accept));
+    if (error) return ack(fail(error));
+    ack(ok(null));
+    settleRematch(room);
+  });
+
   socket.on('gameAction', async ({ action }, ack) => {
     const room = roomOf(socket.id);
     if (!room || !room.state || room.phase !== 'playing') return ack(fail('No game in progress'));
@@ -388,6 +463,7 @@ io.on('connection', (socket) => {
     room.state = result.state;
     ack(ok(null));
     broadcastState(room, action, seat.seat);
+    scheduleOfferExpiry(room);
     await finishIfOver(room);
     await driveAndBroadcast(room);
   });

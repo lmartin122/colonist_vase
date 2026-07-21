@@ -186,6 +186,77 @@ describe('RoomManager', () => {
     expect(room.chat.at(-1)?.text).toBe('msg 129');
   });
 
+  it('finds the active room an account still holds a seat in, across tabs', () => {
+    const mgr = new RoomManager();
+    const room = mgr.create('dev|host', 'Host', {});
+    mgr.join(room, 'dev|alice', 'Alice', 'sock1');
+
+    // Both seated accounts can recover the room code without any client state.
+    expect(mgr.findByUser('dev|host')?.code).toBe(room.code);
+    expect(mgr.findByUser('dev|alice')?.code).toBe(room.code);
+    expect(mgr.findByUser('dev|nobody')).toBeUndefined();
+
+    // A seat handed to a bot mid-game stays reserved and still resolves.
+    mgr.addBot(room, 'dev|host', 'medium');
+    mgr.setReady(room, 'dev|alice', true);
+    expect(mgr.start(room, 'dev|host')).toBeNull();
+    mgr.disconnect(room, 'sock1');
+    expect(mgr.replaceWithBot(room, 'dev|alice')).toBe(true);
+    expect(mgr.findByUser('dev|alice')?.code).toBe(room.code);
+
+    // Finished games are not offered as somewhere to return to.
+    room.phase = 'over';
+    expect(mgr.findByUser('dev|alice')).toBeUndefined();
+  });
+
+  it('asks every other human before a rematch, and keeps only those who opt in', () => {
+    const mgr = new RoomManager();
+    const room = mgr.create('dev|host', 'Host', {});
+    mgr.join(room, 'dev|alice', 'Alice', 'sock1');
+    mgr.join(room, 'dev|bob', 'Bob', 'sock2');
+    mgr.addBot(room, 'dev|host', 'medium');
+
+    // Only offered once the game is actually over.
+    expect(mgr.proposeRematch(room, 'dev|host')).toBe('The game is not over yet');
+    room.phase = 'over';
+
+    expect(mgr.proposeRematch(room, 'dev|host')).toBeNull();
+    // Proposer opts in implicitly; other humans are asked; bots are not.
+    expect(room.rematch?.votes).toEqual({ 0: 'yes', 1: 'pending', 2: 'pending' });
+    expect(mgr.rematchSettled(room)).toBe(false);
+    expect(mgr.proposeRematch(room, 'dev|alice')).toBe('A rematch has already been proposed');
+
+    expect(mgr.respondRematch(room, 'dev|alice', true)).toBeNull();
+    expect(mgr.rematchSettled(room)).toBe(false);
+    expect(mgr.respondRematch(room, 'dev|bob', false)).toBeNull();
+    expect(mgr.rematchSettled(room)).toBe(true);
+
+    expect(mgr.applyRematch(room)).toBe(true);
+    expect(room.phase).toBe('lobby');
+    expect(room.state).toBeNull();
+    expect(room.rematch).toBeNull();
+    // Bob declined and is gone; Host, Alice and the bot remain, reindexed.
+    expect(room.seats.map((s) => s.name)).toEqual(['Host', 'Alice', 'Bot 1']);
+    expect(room.seats.map((s) => s.seat)).toEqual([0, 1, 2]);
+    // Humans must ready up again; bots stay ready.
+    expect(room.seats.map((s) => s.ready)).toEqual([false, false, true]);
+  });
+
+  it('drops the room when nobody accepts the rematch', () => {
+    const mgr = new RoomManager();
+    const room = mgr.create('dev|host', 'Host', {});
+    mgr.join(room, 'dev|alice', 'Alice', 'sock1');
+    room.phase = 'over';
+
+    expect(mgr.proposeRematch(room, 'dev|alice')).toBeNull();
+    // A disconnected seat must not block the vote from settling.
+    mgr.disconnect(room, 'sock1');
+    room.rematch!.votes[1] = 'no';
+    room.rematch!.votes[0] = 'no';
+    expect(mgr.rematchSettled(room)).toBe(true);
+    expect(mgr.applyRematch(room)).toBe(false);
+  });
+
   it('reuses the seat on re-join (reconnection)', () => {
     const mgr = new RoomManager();
     const room = mgr.create('dev|host', 'Host', {});

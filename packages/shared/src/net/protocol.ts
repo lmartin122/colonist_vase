@@ -110,6 +110,21 @@ export interface SeatState {
   userId: string | null;
 }
 
+/** One seat's answer to a rematch proposal. */
+export interface RematchVote {
+  seat: number;
+  name: string;
+  vote: 'pending' | 'yes' | 'no';
+}
+
+/** A pending "play again" proposal. Nobody is pulled into a new game until every
+ *  connected human has answered; decliners simply keep their seat out of it. */
+export interface RematchState {
+  proposedBy: number;
+  proposedByName: string;
+  votes: RematchVote[];
+}
+
 /** Public snapshot of a room's lobby, broadcast on every change. */
 export interface RoomSnapshot {
   code: string;
@@ -121,6 +136,8 @@ export interface RoomSnapshot {
   rules: GameRules;
   layout: string;
   maxPlayers: number;
+  /** Set while a "play again" proposal is awaiting answers. */
+  rematch: RematchState | null;
 }
 
 /** Result envelope returned via Socket.IO acknowledgements. */
@@ -154,6 +171,9 @@ export interface ClientToServerEvents {
   createRoom: (payload: { rules?: Partial<GameRules>; layout?: string }, ack: (res: Result<{ code: string; seat: number }>) => void) => void;
   joinRoom: (payload: { code: string }, ack: (res: Result<{ code: string; seat: number; phase: RoomPhase }>) => void) => void;
   watchGame: (payload: { code: string }, ack: (res: Result<{ code: string; seat: number | null }>) => void) => void;
+  /** The still-active room this ACCOUNT holds a seat in, so "Rejoin" survives a
+   *  new tab, browser or device. Null when the account holds no seat. */
+  findMyRoom: (ack: (res: Result<{ code: string; phase: RoomPhase } | null>) => void) => void;
   leaveRoom: (ack: (res: Result<null>) => void) => void;
   updateRoom: (payload: { rules?: Partial<GameRules>; layout?: string }, ack: (res: Result<null>) => void) => void;
   setReady: (payload: { ready: boolean }, ack: (res: Result<null>) => void) => void;
@@ -162,6 +182,9 @@ export interface ClientToServerEvents {
   setSeatColor: (payload: { seat: number; color: PlayerColor }, ack: (res: Result<null>) => void) => void;
   removeSeat: (payload: { seat: number }, ack: (res: Result<null>) => void) => void;
   startGame: (ack: (res: Result<null>) => void) => void;
+  /** Offer a rematch once the game is over; asks every other human to opt in. */
+  proposeRematch: (ack: (res: Result<null>) => void) => void;
+  respondRematch: (payload: { accept: boolean }, ack: (res: Result<null>) => void) => void;
   gameAction: (payload: { action: Action }, ack: (res: Result<null>) => void) => void;
   sendChat: (payload: { text: string }, ack: (res: Result<null>) => void) => void;
 }

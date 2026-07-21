@@ -22,6 +22,9 @@ export function authorizeSeat(state: GameState, seat: number, action: Action): s
     case 'debugGrantDevCard':
     case 'debugTriggerRobber':
       return 'Debug actions are not allowed online';
+    case 'expireTradeOffer':
+      // Server-driven cleanup only, so a client cannot cut the rejection short.
+      return 'Trade offers expire on their own';
     case 'discard':
       return action.player === seat ? null : 'You can only discard your own cards';
     case 'respondTradeOffer':

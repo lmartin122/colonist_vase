@@ -8,3 +8,8 @@ dist-ssr
 .DS_Store
 .idea
 coverage
+
+# Local agent tooling + personal scratch (kept on disk, out of the repo)
+.claude/
+commit.md
+TODO
