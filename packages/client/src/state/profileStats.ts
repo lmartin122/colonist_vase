@@ -17,6 +17,7 @@ export interface OverallProfileStats {
   rushWins: number;
   longestRoadAwards: number;
   largestArmyAwards: number;
+  abandonedGames: number;
   totalLongestRoad: number;
   bestLongestRoad: number;
   diceRolls: Record<number, number>;
@@ -63,6 +64,7 @@ export function emptyProfileStats(): OverallProfileStats {
     rushWins: 0,
     longestRoadAwards: 0,
     largestArmyAwards: 0,
+    abandonedGames: 0,
     totalLongestRoad: 0,
     bestLongestRoad: 0,
     diceRolls: Object.fromEntries(Array.from({ length: 11 }, (_, index) => [index + 2, 0])),
@@ -94,6 +96,7 @@ export function normalizeProfileStats(value: unknown): OverallProfileStats {
     rushWins: count(source.rushWins),
     longestRoadAwards: count(source.longestRoadAwards),
     largestArmyAwards: count(source.largestArmyAwards),
+    abandonedGames: count(source.abandonedGames),
     totalLongestRoad: count(source.totalLongestRoad),
     bestLongestRoad: count(source.bestLongestRoad),
     diceRolls: Object.fromEntries(Array.from({ length: 11 }, (_, index) => {
@@ -133,7 +136,7 @@ function addPlayerStats(total: PlayerStats, match: PlayerStats): PlayerStats {
   return next;
 }
 
-function addGameResult(current: OverallProfileStats, game: GameState, humanId: number, durationMs: number, won: boolean): OverallProfileStats {
+function addGameResult(current: OverallProfileStats, game: GameState, humanId: number, durationMs: number, won: boolean, abandoned = false): OverallProfileStats {
   if (!game.players[humanId]) return current;
   const points = victoryPoints(game, humanId);
   const route = longestRoadLength(game, humanId);
@@ -150,6 +153,7 @@ function addGameResult(current: OverallProfileStats, game: GameState, humanId: n
     rushWins: current.rushWins + (!classic && won ? 1 : 0),
     longestRoadAwards: current.longestRoadAwards + (game.longestRoad.player === humanId ? 1 : 0),
     largestArmyAwards: current.largestArmyAwards + (game.largestArmy.player === humanId ? 1 : 0),
+    abandonedGames: current.abandonedGames + (abandoned ? 1 : 0),
     totalLongestRoad: current.totalLongestRoad + route,
     bestLongestRoad: Math.max(current.bestLongestRoad, route),
     diceRolls: Object.fromEntries(Array.from({ length: 11 }, (_, index) => {
@@ -167,7 +171,7 @@ export function addCompletedGame(current: OverallProfileStats, game: GameState, 
 
 export function addAbandonedGame(current: OverallProfileStats, game: GameState, humanId: number, durationMs: number): OverallProfileStats {
   if (game.phase === 'gameOver') return current;
-  return addGameResult(current, game, humanId, durationMs, false);
+  return addGameResult(current, game, humanId, durationMs, false, true);
 }
 
 export function recordCompletedGame(game: GameState, humanId: number, durationMs: number): void {

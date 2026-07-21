@@ -44,9 +44,8 @@ export function mainCandidates(state: GameState, actor: number): Action[] {
 function botTradeCandidate(state: GameState, actor: number, difficulty: BotDifficulty): Action | null {
   const me = state.players[actor];
   if (!me.isBot || !state.rules.allowPlayerTrades || state.pending.botTradeOfferedThisTurn[actor]) return null;
-  const human = state.players.find((player) => !player.isBot);
-  if (!human) return null;
-  if (state.pending.passed[human.id]) return null;
+  const activeHumans = state.players.filter((player) => !player.isBot && !state.pending.passed[player.id]);
+  if (!activeHumans.length) return null;
   if (difficulty === 'easy' && ((state.rng.seed + state.turn + actor) & 3) !== 0) return null;
   const targets: { cost: Partial<ResourceBank>; available: boolean }[] = [
     { cost: COSTS.city, available: me.stock.cities > 0 && legalCityVertices(state, actor).length > 0 },
@@ -66,7 +65,9 @@ function botTradeCandidate(state: GameState, actor: number, difficulty: BotDiffi
     const give = [...RESOURCES]
       .filter((resource) => resource !== need && me.resources[resource] > (cost[resource] ?? 0))
       .sort((a, b) => resourceValue(a) - resourceValue(b))[0];
-    if (give) return { type: 'createTradeOffer', give: { [give]: 1 }, receive: { [need]: 1 }, anyCount: 0, target: human.id };
+    // Bot offers are open to every eligible human. The reducer keeps human
+    // responses pending while evaluating bot opponents synchronously.
+    if (give) return { type: 'createTradeOffer', give: { [give]: 1 }, receive: { [need]: 1 }, anyCount: 0 };
   }
   return null;
 }

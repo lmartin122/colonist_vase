@@ -946,13 +946,17 @@ function createTradeOffer(
   if (resourceBundleTotal(receive) + anyCount <= 0) fail('Trade must include cards on both sides');
   if (!canAfford(state.players[proposer].resources, give)) fail('You lack the offered resources');
 
+  const proposerIsBot = state.players[proposer].isBot;
+  if (proposerIsBot) {
+    if (state.pending.botTradeOfferedThisTurn[proposer]) fail('Bot already offered a trade this turn');
+    if (anyCount > 0) fail('Bot offers cannot request wildcard resources');
+  }
+
   const responses: Record<number, TradeOfferResponse> = {};
   if (target !== null) {
     requirePlayer(state, target);
-    if (!state.players[proposer].isBot || state.players[target]?.isBot !== false || target === proposer) fail('Bot offers must target a human opponent');
+    if (!proposerIsBot || state.players[target]?.isBot !== false || target === proposer) fail('Bot offers must target a human opponent');
     if (isConcurrentPhase(state) && state.pending.passed[target]) fail('Trade target has already passed this round');
-    if (state.pending.botTradeOfferedThisTurn[proposer]) fail('Bot already offered a trade this turn');
-    if (anyCount > 0) fail('Bot offers cannot request wildcard resources');
     for (const player of state.players) {
       if (player.id === proposer) continue;
       if (player.id === target) responses[player.id] = { status: 'pending', wildcardResource: null };
@@ -971,16 +975,22 @@ function createTradeOffer(
         continue;
       }
       const wildcardResource = anyCount > 0
-        ? RESOURCES.find((resource) => (give[resource] ?? 0) === 0 && botAcceptsTrade(state, player.id, give, { ...receive, [resource]: (receive[resource] ?? 0) + anyCount }, proposer)) ?? null
+        ? player.isBot
+          ? RESOURCES.find((resource) => (give[resource] ?? 0) === 0 && botAcceptsTrade(state, player.id, give, { ...receive, [resource]: (receive[resource] ?? 0) + anyCount }, proposer)) ?? null
+          : null
         : null;
       responses[player.id] = {
-        status: (anyCount > 0 ? wildcardResource !== null : botAcceptsTrade(state, player.id, give, receive, proposer)) ? 'accepted' : 'declined',
+        status: player.isBot
+          ? ((anyCount > 0 ? wildcardResource !== null : botAcceptsTrade(state, player.id, give, receive, proposer)) ? 'accepted' : 'declined')
+          : 'pending',
         wildcardResource,
       };
     }
   }
   const offer = { id: state.nextTradeOfferId, createdTurn: state.turn, proposer, give, receive, anyCount, target, responses };
-  const pending = target === null ? state.pending : { ...state.pending, botTradeOfferedThisTurn: { ...state.pending.botTradeOfferedThisTurn, [proposer]: true } };
+  const pending = proposerIsBot
+    ? { ...state.pending, botTradeOfferedThisTurn: { ...state.pending.botTradeOfferedThisTurn, [proposer]: true } }
+    : state.pending;
   return log(
     { ...state, pending, tradeOffers: [...state.tradeOffers, offer], nextTradeOfferId: state.nextTradeOfferId + 1 },
     `${playerName(state, proposer)} proposed a trade`,
@@ -1003,7 +1013,8 @@ function respondTradeOffer(state: GameState, offerId: number, responder: number,
   if (isConcurrentPhase(state) && state.pending.passed[responder]) fail('You have already passed this round');
   if (typeof accepted !== 'boolean') fail('Trade response must accept or decline');
   const offer = state.tradeOffers.find((item) => item.id === offerId);
-  if (!offer || offer.target !== responder || offer.responses[responder]?.status !== 'pending') fail('Trade response is no longer pending');
+  const addressedToResponder = offer?.target === null || offer?.target === responder;
+  if (!offer || !addressedToResponder || offer.responses[responder]?.status !== 'pending') fail('Trade response is no longer pending');
   if (state.players[responder].isBot) fail('Only the targeted human can respond');
   validateTradeBundles(offer.give, offer.receive, true);
   if (accepted) {

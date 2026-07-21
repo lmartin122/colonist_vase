@@ -68,6 +68,7 @@ describe('overall profile statistics', () => {
     expect(stats.gamesPlayed).toBe(1);
     expect(stats.wins).toBe(0);
     expect(stats.totalDurationMs).toBe(45_000);
+    expect(stats.abandonedGames).toBe(1);
     expect(stats.matchStats.resourcesCollected.wood).toBe(3);
     expect(stats.matchStats.roadsPlaced).toBe(4);
   });

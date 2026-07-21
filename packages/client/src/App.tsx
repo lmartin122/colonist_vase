@@ -1,15 +1,15 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
+import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { GameCanvas } from './ui/GameCanvas';
 import { Hud } from './ui/Hud';
 import { StartScreen } from './ui/StartScreen';
 import { ThemeToggle } from './ui/ThemeToggle';
-import { Home } from './ui/Home';
-import { Lobby } from './ui/online/Lobby';
-import { Room } from './ui/online/Room';
-import { Profile } from './ui/online/Profile';
 import { OnlineGate } from './ui/online/OnlineGate';
 import { WaitingForGame } from './ui/online/WaitingForGame';
 import { useGame } from './state/store';
+import { useOnline } from './state/online';
+import { watchGame } from './net/socket';
+import { normalizeRoomCode } from './net/roomCode';
 
 /** The in-game view, shared by local and online play. */
 function GameShell() {
@@ -21,26 +21,63 @@ function GameShell() {
   );
 }
 
-function LocalPlay() {
+function RootPlay() {
   const game = useGame((s) => s.game);
   return game ? <GameShell /> : <StartScreen />;
 }
 
 function OnlineGame() {
+  return <OnlineGate><OnlineGameContent /></OnlineGate>;
+}
+
+function OnlineGameContent() {
+  const { code: routeCode } = useParams<{ code: string }>();
+  const code = normalizeRoomCode(routeCode ?? '');
+  const navigate = useNavigate();
   const game = useGame((s) => s.game);
-  return <OnlineGate>{game ? <GameShell /> : <WaitingForGame />}</OnlineGate>;
+  const abandonGame = useGame((s) => s.abandonGame);
+  const room = useOnline((s) => s.room);
+  const activeCode = useOnline((s) => s.code);
+  const setCode = useOnline((s) => s.setCode);
+  const setSeat = useOnline((s) => s.setSeat);
+  const attempted = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (code.length !== 6) {
+      navigate('/', { replace: true });
+      return;
+    }
+    if (room?.code === code && room.phase !== 'lobby') return;
+    if (attempted.current === code) return;
+    attempted.current = code;
+    if (activeCode && activeCode !== code) abandonGame();
+    void watchGame(code).then((result) => {
+      if (!result.ok) {
+        setCode(null);
+        abandonGame();
+        navigate('/', { replace: true });
+        return;
+      }
+      setCode(result.data.code);
+      setSeat(result.data.seat);
+    });
+  }, [abandonGame, activeCode, code, navigate, room, setCode, setSeat]);
+
+  const ready = game && activeCode === code && room?.code === code && room.phase !== 'lobby';
+  return ready ? <GameShell /> : <WaitingForGame code={code} />;
 }
 
 export default function App() {
   return (
     <div className="relative h-full w-full overflow-hidden">
       <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/local" element={<LocalPlay />} />
-        <Route path="/lobby" element={<OnlineGate><Lobby /></OnlineGate>} />
-        <Route path="/room/:code" element={<OnlineGate><Room /></OnlineGate>} />
-        <Route path="/game" element={<OnlineGame />} />
-        <Route path="/profile" element={<OnlineGate><Profile /></OnlineGate>} />
+        <Route path="/" element={<RootPlay />} />
+        <Route path="/local" element={<Navigate to="/" replace />} />
+        <Route path="/lobby" element={<Navigate to="/" replace />} />
+        <Route path="/room/:code" element={<RootPlay />} />
+        <Route path="/game" element={<Navigate to="/" replace />} />
+        <Route path="/game/:code" element={<OnlineGame />} />
+        <Route path="/profile" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <ThemeToggle />

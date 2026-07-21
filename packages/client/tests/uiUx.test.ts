@@ -4,6 +4,7 @@ import { boardPreviewForLogEntry } from '../src/state/boardPreview';
 import { normalizeUiPreferences } from '../src/state/preferences';
 import { resolveReducedMotion } from '../src/state/useMotionPreference';
 import { currentActionMessage } from '../src/ui/actionGuidance';
+import { normalizeRoomCode } from '../src/net/roomCode';
 
 function game() {
   return createGame({ players: [{ name: 'You', isBot: false }, { name: 'Ada', isBot: true }], layout: 'classic', seed: 7 });
@@ -29,6 +30,14 @@ describe('persisted UI preferences', () => {
     expect(resolveReducedMotion('system', false)).toBe(false);
     expect(resolveReducedMotion('full', true)).toBe(false);
     expect(resolveReducedMotion('reduced', false)).toBe(true);
+  });
+});
+
+describe('online room code input', () => {
+  it('accepts bare codes and copied lobby or game links', () => {
+    expect(normalizeRoomCode('y6xll9')).toBe('Y6XLL9');
+    expect(normalizeRoomCode('http://localhost:5173/room/Y6XLL9')).toBe('Y6XLL9');
+    expect(normalizeRoomCode('https://example.com/game/Y6XLL9/?invite=true#copy')).toBe('Y6XLL9');
   });
 });
 

@@ -63,6 +63,13 @@ function cards(resource: Resource, from: Anchor, to: Anchor, count: number, base
 const delta = (before: GameState, after: GameState, id: number, r: Resource) =>
   after.players[id].resources[r] - before.players[id].resources[r];
 
+const publicHandTotal = (state: GameState, id: number) => {
+  const player = state.players[id] as GameState['players'][number] & { handCount?: number };
+  return player.handCount ?? RESOURCES.reduce((sum, resource) => sum + player.resources[resource], 0);
+};
+
+const handDelta = (before: GameState, after: GameState, id: number) => publicHandTotal(after, id) - publicHandTotal(before, id);
+
 /**
  * Who actually performed this action. Most actions carry an optional
  * `player` field for concurrent modes (e.g. Rush) where `currentPlayer` is
@@ -84,7 +91,7 @@ export function deriveFlights(
     case 'placeSetupRoad':
       return [
         ...setupGrantFlights(before, after, humanId),
-        ...(startedRushRound ? production(before, after, humanId, setupGrantGains(before, after)) : []),
+        ...(startedRushRound ? production(before, after, humanId, setupGrantGains(before, after, humanId)) : []),
       ];
     case 'rollDice':
       return production(before, after, humanId);
@@ -93,9 +100,9 @@ export function deriveFlights(
     case 'discard':
       return discardFlights(action.player, action.resources, humanId);
     case 'moveRobber':
-      return stealFlights(before, after, actorOf(before, action), humanId);
+      return stealFlights(before, after, actorOf(before, action), action.stealFrom, humanId);
     case 'playKnight':
-      return stealFlights(before, after, actorOf(before, action), humanId);
+      return stealFlights(before, after, actorOf(before, action), action.stealFrom, humanId);
     case 'buildRoad':
     case 'buildSettlement':
     case 'buildCity':
@@ -127,13 +134,15 @@ function setupGrantFlights(before: GameState, after: GameState, humanId: number)
   const player = before.currentPlayer;
   const used = new Map<Resource, number>();
   const flights: Flight[] = [];
+  const exactVisible = player === humanId || !('handCount' in before.players[player]);
+  const totalCap = Math.max(0, handDelta(before, after, player));
   for (const tileId of before.board.vertices[vertex].tileIds) {
     const tile = before.board.tiles[tileId];
     if (tile.type === 'desert') continue;
     const resource = tile.type as Resource;
-    const cap = delta(before, after, player, resource);
+    const cap = exactVisible ? delta(before, after, player, resource) : totalCap;
     const already = used.get(resource) ?? 0;
-    if (already >= cap) continue;
+    if (exactVisible ? already >= cap : flights.length >= cap) continue;
     used.set(resource, already + 1);
     flights.push(...cards(resource, { t: 'tile', tile: tileId }, held(player, resource, humanId), 1, flights.length * 40));
   }
@@ -142,7 +151,7 @@ function setupGrantFlights(before: GameState, after: GameState, humanId: number)
 
 /** Resource gains attributable to the final setup placement, so an automatic
  * Rush opening roll only animates the additional production delta. */
-function setupGrantGains(before: GameState, after: GameState): { player: number; gains: Partial<Record<Resource, number>> } | null {
+function setupGrantGains(before: GameState, after: GameState, humanId: number): { player: number; gains: Partial<Record<Resource, number>> } | null {
   const vertex = before.setup?.lastSettlement;
   if (vertex === null || vertex === undefined) return null;
   const player = before.currentPlayer;
@@ -153,8 +162,14 @@ function setupGrantGains(before: GameState, after: GameState): { player: number;
     raw[tile.type] = (raw[tile.type] ?? 0) + 1;
   }
   const gains: Partial<Record<Resource, number>> = {};
+  const exactVisible = player === humanId || !('handCount' in before.players[player]);
+  let remaining = Math.max(0, handDelta(before, after, player));
   for (const resource of RESOURCES) {
-    gains[resource] = Math.min(raw[resource] ?? 0, Math.max(0, delta(before, after, player, resource)));
+    const amount = exactVisible
+      ? Math.min(raw[resource] ?? 0, Math.max(0, delta(before, after, player, resource)))
+      : Math.min(raw[resource] ?? 0, remaining);
+    gains[resource] = amount;
+    remaining -= amount;
   }
   return { player, gains };
 }
@@ -184,15 +199,20 @@ function production(
 
   // Clamp against what was actually gained (the bank can run dry).
   const used = new Map<string, number>();
+  const usedByPlayer = new Map<number, number>();
   const flights: Flight[] = [];
   for (const g of raw) {
     const key = `${g.owner}|${g.resource}`;
-    const cap = delta(before, after, g.owner, g.resource)
-      - (excluded?.player === g.owner ? excluded.gains[g.resource] ?? 0 : 0);
+    const exactVisible = g.owner === humanId || !('handCount' in before.players[g.owner]);
+    const cap = exactVisible
+      ? delta(before, after, g.owner, g.resource) - (excluded?.player === g.owner ? excluded.gains[g.resource] ?? 0 : 0)
+      : handDelta(before, after, g.owner) - (excluded?.player === g.owner ? RESOURCES.reduce((sum, resource) => sum + (excluded.gains[resource] ?? 0), 0) : 0);
     const already = used.get(key) ?? 0;
-    const allow = Math.max(0, Math.min(g.count, cap - already));
+    const alreadyForPlayer = usedByPlayer.get(g.owner) ?? 0;
+    const allow = Math.max(0, Math.min(g.count, exactVisible ? cap - already : cap - alreadyForPlayer));
     if (allow <= 0) continue;
     used.set(key, already + allow);
+    usedByPlayer.set(g.owner, alreadyForPlayer + allow);
     flights.push(...cards(g.resource, { t: 'tile', tile: g.tile }, held(g.owner, g.resource, humanId), allow, flights.length * 40));
   }
   return flights;
@@ -213,13 +233,13 @@ function discardFlights(
 }
 
 /** The single stolen card flies from victim to thief (resource found by diff). */
-function stealFlights(before: GameState, after: GameState, thief: number, humanId: number): Flight[] {
-  for (let victim = 0; victim < before.players.length; victim++) {
-    if (victim === thief) continue;
-    for (const r of RESOURCES) {
-      if (delta(before, after, victim, r) === -1 && delta(before, after, thief, r) === 1) {
-        return cards(r, held(victim, r, humanId), held(thief, r, humanId), 1, 0);
-      }
+function stealFlights(before: GameState, after: GameState, thief: number, victim: number | null, humanId: number): Flight[] {
+  if (victim === null) return [];
+  for (const r of RESOURCES) {
+    const thiefGained = delta(before, after, thief, r) === 1;
+    const victimLost = delta(before, after, victim, r) === -1;
+    if (thiefGained || victimLost) {
+      return cards(r, held(victim, r, humanId), held(thief, r, humanId), 1, 0);
     }
   }
   return [];
@@ -250,8 +270,11 @@ function tradeFlights(before: GameState, after: GameState, me: number, partner: 
   const flights: Flight[] = [];
   for (const r of RESOURCES) {
     const dMe = delta(before, after, me, r);
+    const dPartner = delta(before, after, partner, r);
     if (dMe < 0) flights.push(...cards(r, held(me, r, humanId), held(partner, r, humanId), -dMe, flights.length * 55));
     else if (dMe > 0) flights.push(...cards(r, held(partner, r, humanId), held(me, r, humanId), dMe, flights.length * 55));
+    else if (dPartner < 0) flights.push(...cards(r, held(partner, r, humanId), held(me, r, humanId), -dPartner, flights.length * 55));
+    else if (dPartner > 0) flights.push(...cards(r, held(me, r, humanId), held(partner, r, humanId), dPartner, flights.length * 55));
   }
   return flights;
 }
@@ -261,7 +284,9 @@ function monopolyFlights(before: GameState, after: GameState, resource: Resource
   const flights: Flight[] = [];
   for (let p = 0; p < before.players.length; p++) {
     if (p === taker) continue;
-    const lost = -delta(before, after, p, resource);
+    const lost = p === humanId || !('handCount' in before.players[p])
+      ? -delta(before, after, p, resource)
+      : -handDelta(before, after, p);
     if (lost > 0) flights.push(...cards(resource, held(p, resource, humanId), held(taker, resource, humanId), lost, flights.length * 40));
   }
   return flights;

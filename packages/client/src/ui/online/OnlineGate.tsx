@@ -19,10 +19,10 @@ function Card({ children }: { children: ReactNode }) {
 function NotConfigured() {
   return (
     <Card>
-      <h2 className="font-display text-2xl font-extrabold text-ink">Online no disponible</h2>
-      <p className="mt-2 text-ink-soft">Configurá Auth0 para habilitar el multijugador.</p>
+      <h2 className="font-display text-2xl font-extrabold text-ink">Online unavailable</h2>
+      <p className="mt-2 text-ink-soft">Configure Auth0 to enable multiplayer.</p>
       <Link to="/" className="mt-6 inline-block rounded-xl bg-ink/10 px-5 py-2.5 font-bold text-ink hover:bg-ink/15">
-        ← Volver
+        ← Back
       </Link>
     </Card>
   );
@@ -50,8 +50,8 @@ function DevGate({ children }: { children: ReactNode }) {
   if (!name) {
     return (
       <Card>
-        <h2 className="font-display text-2xl font-extrabold text-ink">Entrar (dev)</h2>
-        <p className="mt-2 text-ink-soft">Elegí un nombre para jugar online localmente.</p>
+        <h2 className="font-display text-2xl font-extrabold text-ink">Log in (dev)</h2>
+        <p className="mt-2 text-ink-soft">Pick a name to play online locally.</p>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -62,11 +62,11 @@ function DevGate({ children }: { children: ReactNode }) {
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="Tu nombre"
+            placeholder="Your name"
             className="flex-1 rounded-xl bg-card-alt px-4 py-3 text-ink outline-none ring-1 ring-black/5 focus:ring-2 focus:ring-p-blue dark:ring-white/10"
           />
           <button type="submit" className="rounded-xl bg-p-blue px-5 font-display font-extrabold text-white shadow-soft hover:brightness-105">
-            Entrar
+            Enter
           </button>
         </form>
       </Card>
@@ -84,9 +84,9 @@ function Connecting() {
   const error = useOnline((s) => s.error);
   return (
     <Card>
-      <p className="text-ink-soft">Conectando al servidor…</p>
+      <p className="text-ink-soft">Connecting to the server…</p>
       {status === 'error' && (
-        <p className="mt-3 text-sm text-p-red">{error ?? 'No se pudo conectar. ¿Está corriendo el servidor?'}</p>
+        <p className="mt-3 text-sm text-p-red">{error ?? 'Could not connect. Is the server running?'}</p>
       )}
     </Card>
   );
@@ -110,18 +110,18 @@ function AuthedGate({ children }: { children: ReactNode }) {
     };
   }, [isAuthenticated, getAccessTokenSilently, connect]);
 
-  if (isLoading) return <Card><p className="text-ink-soft">Cargando…</p></Card>;
+  if (isLoading) return <Card><p className="text-ink-soft">Loading…</p></Card>;
 
   if (!isAuthenticated) {
     return (
       <Card>
-        <h2 className="font-display text-2xl font-extrabold text-ink">Iniciá sesión</h2>
-        <p className="mt-2 text-ink-soft">Entrá con tu cuenta para jugar online.</p>
+        <h2 className="font-display text-2xl font-extrabold text-ink">Log in</h2>
+        <p className="mt-2 text-ink-soft">Sign in with your account to play online.</p>
         <button
           onClick={() => void loginWithRedirect()}
           className="mt-6 rounded-xl bg-p-blue px-6 py-3 font-display font-extrabold text-white shadow-soft hover:brightness-105"
         >
-          Iniciar sesión
+          Sign in
         </button>
       </Card>
     );

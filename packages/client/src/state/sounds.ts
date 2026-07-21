@@ -109,7 +109,10 @@ export function deriveSounds(before: GameState, after: GameState, action: Action
   const out: SoundKey[] = [];
 
   const startedRushRound = after.rules.mode === 'rush' && after.turn > before.turn && after.dice !== null;
-  if (action.type === 'rollDice' || startedRushRound) out.push(DICE[Math.floor(Math.random() * DICE.length)]);
+  if (action.type === 'rollDice' || action.type === 'rollForStart' || startedRushRound) {
+    const diceIndex = after.dice ? (after.dice[0] * 7 + after.dice[1]) % DICE.length : 0;
+    out.push(DICE[diceIndex]);
+  }
   if (action.type === 'buildRoad' || action.type === 'placeSetupRoad') out.push('roadPlace');
   if (action.type === 'buildSettlement' || action.type === 'placeSetupSettlement') out.push('settlementPlace');
   if (action.type === 'buildCity') out.push('cityPlace');
@@ -133,14 +136,18 @@ export function deriveSounds(before: GameState, after: GameState, action: Action
     const offer = after.tradeOffers[after.tradeOffers.length - 1];
     if (offer) {
       if (offer.proposer === humanId) {
-        // The human offered to everyone; bots respond synchronously. If nobody
-        // took it, it's dead; otherwise wait for the human to confirm a partner.
-        if (!Object.values(offer.responses).some((r) => r.status === 'accepted')) out.push('offerRejected');
+        // Bots answer synchronously, while human responses remain pending.
+        // Only call it rejected when every responder has actually declined.
+        if (Object.values(offer.responses).every((r) => r.status === 'declined')) out.push('offerRejected');
       } else if (offer.responses[humanId]?.status === 'pending') {
         // Someone offered to the human — can they cover what's being asked for?
         out.push(canAfford(after.players[humanId].resources, offer.receive) ? 'offerAcceptable' : 'offerNotAcceptable');
       }
     }
+  }
+  if (action.type === 'respondTradeOffer') {
+    const offer = after.tradeOffers.find((item) => item.id === action.offerId);
+    if (offer?.proposer === humanId) out.push(action.accepted ? 'offerAccepted' : 'offerRejected');
   }
   // The proposer confirmed an accepting partner: the trade went through.
   if (action.type === 'completeTradeOffer') out.push('offerAccepted');

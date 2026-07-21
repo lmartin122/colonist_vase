@@ -35,7 +35,7 @@ export function MobileInfoSheet({ game }: { game: GameState }) {
             {tab === 'players' && <div className="grid grid-cols-2 gap-2">{game.turnOrder.map((id) => { const item = game.players[id]; return <button key={id} onClick={() => setPlayer(item)} className="flex min-h-14 items-center gap-2 rounded-xl bg-card-alt p-2 text-left"><PlayerIcon isBot={item.isBot} className="h-8 w-8" /><span className="min-w-0"><span className="block truncate font-bold">{item.name}</span><span className="text-xs text-ink-soft">{id === humanId ? victoryPoints(game, id) : publicVictoryPoints(game, id)} VP</span></span></button>; })}</div>}
             {tab === 'bank' && <div className="grid grid-cols-3 gap-2">{RESOURCES.map((resource) => <div key={resource} className="flex min-h-16 items-center gap-2 rounded-xl bg-card-alt p-2"><PackedSprite name={RESOURCE_CARD_FRAME[resource]} className="h-12 w-9" /><span className="font-extrabold">{game.rules.hideBankCards ? '?' : game.bank[resource]}</span></div>)}<div className="flex min-h-16 items-center gap-2 rounded-xl bg-card-alt p-2"><PackedSprite name={CARD_DEV_BACK_FRAME} className="h-12 w-9" /><span className="font-extrabold">{game.rules.hideBankCards ? '?' : game.devDeck.length}</span></div></div>}
             {tab === 'history' && <div className="space-y-1 text-sm">{game.log.slice(-40).map((entry, index) => <div key={index} className="rounded-lg bg-card-alt/60 px-2 py-1.5">{entry.message}</div>)}</div>}
-            {tab === 'chat' && <div className="h-64"><ChatPanel game={game} hideHeader /></div>}
+            {tab === 'chat' && <div className="h-64"><ChatPanel hideHeader /></div>}
           </div>
         </section>
       )}

@@ -85,14 +85,17 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  */
 export async function driveBots(
   state: GameState,
-  onState: (next: GameState) => void,
+  onState: (next: GameState, action: Action, actor: number) => void,
   delayMs = 0,
+  shouldContinue: () => boolean = () => true,
 ): Promise<GameState> {
   let current = state;
   for (;;) {
+    if (!shouldContinue()) break;
     const actor = botActor(current);
     if (actor === null) break;
     if (delayMs > 0) await wait(delayMs);
+    if (!shouldContinue()) break;
 
     const action = nextBotAction(current, actor);
     if (!action) break;
@@ -101,16 +104,17 @@ export async function driveBots(
     if (!result.ok) {
       // A bot should never emit an illegal move; end its turn as a safety net.
       console.warn('[bot] illegal action, ending turn:', action, result.error);
-      const fallback = reduce(current, isConcurrentPhase(current)
+      const fallbackAction: Action = isConcurrentPhase(current)
         ? { type: 'passRound', player: actor }
-        : { type: 'endTurn' });
+        : { type: 'endTurn' };
+      const fallback = reduce(current, fallbackAction);
       if (!fallback.ok) break;
       current = fallback.state;
-      onState(current);
+      onState(current, fallbackAction, actor);
       continue;
     }
     current = result.state;
-    onState(current);
+    onState(current, action, actor);
   }
   return current;
 }

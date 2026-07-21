@@ -24,6 +24,7 @@ export interface Store {
   game: GameState | null;
   mode: GameMode;
   humanId: number;
+  spectator: boolean;
   build: BuildMode;
   thinking: boolean;
   error: string | null;
@@ -35,7 +36,7 @@ export interface Store {
 
   newGame: (config: GameConfig) => void;
   /** Apply an authoritative (already-redacted) state pushed by the server. */
-  applyServerState: (state: GameState, yourSeat: number) => void;
+  applyServerState: (state: GameState, yourSeat: number | null, action?: Action | null) => void;
   abandonGame: () => void;
   dispatch: (action: Action) => boolean;
   setBuild: (mode: BuildMode) => void;
@@ -107,7 +108,7 @@ export function automatedActor(game: GameState, humanId: number): number | null 
     }
     return null;
   }
-  if (game.tradeOffers.some((offer) => offer.target === humanId && offer.responses[humanId]?.status === 'pending')) return null;
+  if (game.tradeOffers.some((offer) => offer.responses[humanId]?.status === 'pending')) return null;
   return game.players[game.currentPlayer].isBot ? game.currentPlayer : null;
 }
 
@@ -129,11 +130,11 @@ function simulationAction(game: GameState, humanId: number): Action | null {
 }
 
 export const useGame = create<Store>((set, get) => {
-  const timingFor = (game: GameState) => {
+  const timingFor = (game: GameState, recordStats = true) => {
     if (game.phase !== 'gameOver') return { matchEndedAt: null };
     const endedAt = get().matchEndedAt ?? Date.now();
     const previous = get().game;
-    if (previous?.phase !== 'gameOver') {
+    if (recordStats && previous?.phase !== 'gameOver') {
       recordCompletedGame(game, get().humanId, endedAt - (get().matchStartedAt ?? endedAt));
     }
     return { matchEndedAt: endedAt };
@@ -202,6 +203,7 @@ export const useGame = create<Store>((set, get) => {
     game: null,
     mode: 'local',
     humanId: 0,
+    spectator: false,
     build: null,
     thinking: false,
     error: null,
@@ -219,39 +221,53 @@ export const useGame = create<Store>((set, get) => {
         set({ error: err instanceof Error ? err.message : 'Could not start the game' });
         return;
       }
-      set({ game, mode: 'local', build: null, error: null, humanId: 0, debugInfiniteTimer: null, matchStartedAt: Date.now(), matchEndedAt: null });
+      set({ game, mode: 'local', build: null, error: null, humanId: 0, spectator: false, debugInfiniteTimer: null, matchStartedAt: Date.now(), matchEndedAt: null });
       playSound('gameStarted');
       void runBots();
     },
 
-    applyServerState(state, yourSeat) {
-      // The server pushes an already-redacted, authoritative snapshot. Piece
-      // pop-ins still animate via BoardRenderer.sync; card-flight/sound diffing
-      // needs the originating action (not yet sent over the wire) — TODO.
+    applyServerState(state, yourSeat, action = null) {
+      const previous = get().game;
+      const timing =
+        yourSeat === null
+          ? { matchEndedAt: state.phase === 'gameOver' ? Date.now() : null }
+          : timingFor(state, false);
       set({
         game: state,
         mode: 'online',
-        humanId: yourSeat,
+        humanId: yourSeat ?? -1,
+        spectator: yourSeat === null,
         thinking: false,
         error: null,
         build: null,
         matchStartedAt: get().matchStartedAt ?? Date.now(),
-        ...timingFor(state),
+        ...timing,
       });
+      if (previous && action) {
+        const viewer = yourSeat ?? -1;
+        emitFlights(deriveFlights(previous, state, action, viewer));
+        playSounds(deriveSounds(previous, state, action, viewer));
+      } else if (!previous) {
+        playSound('gameStarted');
+      }
     },
 
     abandonGame() {
-      const { game, humanId, matchStartedAt } = get();
-      if (game && game.phase !== 'gameOver') {
+      const { game, mode, humanId, matchStartedAt, spectator } = get();
+      if (game && game.phase !== 'gameOver' && !spectator && mode === 'local') {
         const endedAt = Date.now();
         recordAbandonedGame(game, humanId, endedAt - (matchStartedAt ?? endedAt));
       }
-      set({ game: null, mode: 'local', build: null, thinking: false, error: null, debugInfiniteTimer: null, matchStartedAt: null, matchEndedAt: null });
+      set({ game: null, mode: 'local', build: null, thinking: false, error: null, spectator: false, debugInfiniteTimer: null, matchStartedAt: null, matchEndedAt: null });
     },
 
     dispatch(action) {
-      const { game, mode, build } = get();
+      const { game, mode, build, spectator } = get();
       if (!game) return false;
+      if (spectator) {
+        set({ error: 'Spectators cannot make game actions' });
+        return false;
+      }
       if (mode === 'online') {
         // The server is authoritative: send the action and wait for the pushed
         // state. Rejections come back on the ack.

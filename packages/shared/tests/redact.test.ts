@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createGame } from '../src/engine/game';
+import type { Action } from '../src/engine/actions';
 import { emptyBank, type GameState, type OwnedDevCard } from '../src/engine/types';
-import { handSize, redactState, unplayedDevCount } from '../src/net/protocol';
+import { handSize, redactAction, redactState, unplayedDevCount } from '../src/net/protocol';
+import { stealableOpponents } from '../src/engine/placement';
 
 /** Build a deterministic fixture with known hidden information for two seats. */
 function fixture(): GameState {
@@ -47,6 +49,13 @@ describe('redactState', () => {
     expect(opp.unplayedDevCount).toBe(1);
   });
 
+  it('hides every player hand from spectators', () => {
+    const view = redactState(fixture(), null);
+    expect(view.players.map((player) => player.resources)).toEqual([emptyBank(), emptyBank()]);
+    expect(view.players.map((player) => player.devCards)).toEqual([[], []]);
+    expect(view.players.map((player) => player.handCount)).toEqual([3, 3]);
+  });
+
   it('hides the dev-deck order and the RNG seed (anti-cheat)', () => {
     const view = redactState(fixture(), 0);
     expect(view.devDeck).toEqual([]);
@@ -72,5 +81,26 @@ describe('redactState', () => {
     // Raw player: computes from the real hand.
     expect(handSize(state.players[1])).toBe(3);
     expect(unplayedDevCount(state.players[1])).toBe(1);
+  });
+
+  it('preserves robber victim selection when an opponent hand is redacted', () => {
+    const state = fixture();
+    const tile = state.board.tiles.find((candidate) => candidate.id !== state.board.robberTileId)!;
+    const withBuilding = {
+      ...state,
+      buildings: { ...state.buildings, [tile.vertexIds[0]]: { owner: 1, type: 'settlement' as const } },
+    };
+    const view = redactState(withBuilding, 0);
+    expect(stealableOpponents(view, tile.id, 0)).toContain(1);
+  });
+
+  it('redacts private action choices from observers but preserves them for the actor', () => {
+    const discard = { type: 'discard', player: 1, resources: { sheep: 2 } } as const;
+    expect(redactAction(discard, 1, 0)).toEqual({ ...discard, resources: {} });
+    expect(redactAction(discard, 1, 1)).toEqual(discard);
+
+    const plenty: Action = { type: 'playYearOfPlenty', resources: ['wood', 'ore'], player: 1 };
+    expect(redactAction(plenty, 1, 0)).toEqual({ ...plenty, resources: [] });
+    expect(redactAction(plenty, 1, 1)).toEqual(plenty);
   });
 });

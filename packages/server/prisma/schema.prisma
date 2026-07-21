@@ -26,8 +26,11 @@ model User {
 
 model Game {
   id        String       @id @default(cuid())
+  roomCode  String       @unique
   seed      Int
   layout    String
+  mode      String       @default("classic")
+  diceStats Json         @default("{}")
   winner    User?        @relation("winner", fields: [winnerId], references: [id])
   winnerId  String?
   startedAt DateTime
@@ -46,6 +49,11 @@ model GamePlayer {
   name    String
   isBot   Boolean
   finalVp Int
+  stats              Json    @default("{}")
+  longestRoadLength  Int     @default(0)
+  longestRoadAward   Boolean @default(false)
+  largestArmyAward   Boolean @default(false)
+  abandoned          Boolean @default(false)
 }
 
 // TODO: full move history / replay. Every accepted action can be appended here

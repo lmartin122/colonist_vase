@@ -385,7 +385,7 @@ function HistoryChatPanels({ game }: { game: GameState }) {
       >
         <span className="h-1 w-14 rounded-full bg-white/20 opacity-0 shadow-sm transition group-hover:bg-white/70 group-hover:opacity-100 group-active:bg-white group-active:opacity-100" />
       </div>
-      <ChatPanel game={game} />
+      <ChatPanel />
     </div>
   );
 }

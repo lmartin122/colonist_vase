@@ -41,7 +41,7 @@ export interface RedactedGameState extends Omit<GameState, 'players'> {
  *
  * Pure: never mutates `state`.
  */
-export function redactState(state: GameState, forSeat: number): RedactedGameState {
+export function redactState(state: GameState, forSeat: number | null): RedactedGameState {
   const players = state.players.map((p): RedactedPlayer => {
     const handCount = totalResources(p.resources);
     const unplayedDevCount = p.devCards.filter((c) => !c.played).length;
@@ -59,6 +59,17 @@ export function redactState(state: GameState, forSeat: number): RedactedGameStat
     rng: { seed: 0 },
     bank: state.rules.hideBankCards ? emptyBank() : state.bank,
   };
+}
+
+/** Keep effect-relevant action context while hiding private resource choices. */
+export function redactAction(action: Action, actorSeat: number, forSeat: number): Action {
+  if (action.type === 'discard' && action.player !== forSeat) {
+    return { ...action, resources: {} };
+  }
+  if (action.type === 'playYearOfPlenty' && actorSeat !== forSeat) {
+    return { ...action, resources: [] };
+  }
+  return action;
 }
 
 // --- View accessors that work on BOTH raw and redacted players --------------
@@ -102,6 +113,8 @@ export interface SeatState {
 /** Public snapshot of a room's lobby, broadcast on every change. */
 export interface RoomSnapshot {
   code: string;
+  /** Seat belonging to the receiving socket; null for spectators. */
+  yourSeat?: number | null;
   phase: RoomPhase;
   hostSeat: number;
   seats: SeatState[];
@@ -114,25 +127,52 @@ export interface RoomSnapshot {
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
 // ---------------------------------------------------------------------------
+// Chat — room-scoped, spans the lobby and the live game
+// ---------------------------------------------------------------------------
+
+/** Longest chat message the server accepts; longer text is trimmed. */
+export const MAX_CHAT_LENGTH = 300;
+/** How many recent messages a room keeps (and replays to joiners). */
+export const MAX_CHAT_HISTORY = 100;
+
+/** One chat line. `seat` is null (and `color` is null) for system notices. */
+export interface ChatMessage {
+  id: number;
+  seat: number | null;
+  name: string;
+  color: PlayerColor | null;
+  text: string;
+  ts: number;
+  system?: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Socket.IO typed events (used to parametrize Server<>/Socket<> on both sides)
 // ---------------------------------------------------------------------------
 
 export interface ClientToServerEvents {
-  createRoom: (payload: { rules?: Partial<GameRules>; layout?: string }, ack: (res: Result<{ code: string }>) => void) => void;
-  joinRoom: (payload: { code: string }, ack: (res: Result<{ code: string }>) => void) => void;
+  createRoom: (payload: { rules?: Partial<GameRules>; layout?: string }, ack: (res: Result<{ code: string; seat: number }>) => void) => void;
+  joinRoom: (payload: { code: string }, ack: (res: Result<{ code: string; seat: number; phase: RoomPhase }>) => void) => void;
+  watchGame: (payload: { code: string }, ack: (res: Result<{ code: string; seat: number | null }>) => void) => void;
   leaveRoom: (ack: (res: Result<null>) => void) => void;
+  updateRoom: (payload: { rules?: Partial<GameRules>; layout?: string }, ack: (res: Result<null>) => void) => void;
   setReady: (payload: { ready: boolean }, ack: (res: Result<null>) => void) => void;
   addBot: (payload: { difficulty: BotDifficulty }, ack: (res: Result<null>) => void) => void;
+  setBotDifficulty: (payload: { seat: number; difficulty: BotDifficulty }, ack: (res: Result<null>) => void) => void;
+  setSeatColor: (payload: { seat: number; color: PlayerColor }, ack: (res: Result<null>) => void) => void;
   removeSeat: (payload: { seat: number }, ack: (res: Result<null>) => void) => void;
   startGame: (ack: (res: Result<null>) => void) => void;
   gameAction: (payload: { action: Action }, ack: (res: Result<null>) => void) => void;
+  sendChat: (payload: { text: string }, ack: (res: Result<null>) => void) => void;
 }
 
 export interface ServerToClientEvents {
   room: (snapshot: RoomSnapshot) => void;
-  gameState: (payload: { state: RedactedGameState; yourSeat: number }) => void;
+  gameState: (payload: { state: RedactedGameState; yourSeat: number | null; action: Action | null }) => void;
   gameOver: (payload: { winnerSeat: number | null; scores: { seat: number; vp: number }[] }) => void;
   errorMsg: (payload: { message: string }) => void;
+  chat: (message: ChatMessage) => void;
+  chatHistory: (payload: { messages: ChatMessage[] }) => void;
 }
 
 /** Data attached to each authenticated socket (set by the auth middleware). */

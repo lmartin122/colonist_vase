@@ -10,7 +10,7 @@ import { PlayerScorePortrait } from './PlayerDecorations';
 export function TradeOffersPanel({ game }: { game: GameState }) {
   const humanId = useGame((state) => state.humanId);
   const dispatch = useGame((state) => state.dispatch);
-  const offers = game.tradeOffers.filter((offer) => offer.proposer === humanId || (offer.target === humanId && offer.responses[humanId]?.status === 'pending'));
+  const offers = game.tradeOffers.filter((offer) => offer.proposer === humanId || offer.responses[humanId]?.status === 'pending');
   const canManage = isConcurrentPhase(game) ? !game.pending.passed[humanId] : game.currentPlayer === humanId && game.phase === 'main';
   const canRespond = game.phase === 'main' || isConcurrentPhase(game);
   const respondToOffer = useCallback((offerId: number, accepted: boolean) => {
@@ -20,7 +20,7 @@ export function TradeOffersPanel({ game }: { game: GameState }) {
   return (
     <aside className="trade-offers-rail pointer-events-auto absolute top-16 z-20 w-72 sm:top-[4.5rem] xl:top-3">
       <div className="max-h-[calc(100vh-10rem)] space-y-3 overflow-y-auto px-0.5 xl:max-h-[calc(100vh-1.5rem)]">
-        {offers.map((offer) => offer.target === humanId ? (
+        {offers.map((offer) => offer.proposer !== humanId ? (
           <IncomingOffer key={offer.id} offer={offer} game={game} humanId={humanId} canRespond={canRespond} onRespond={respondToOffer} />
         ) : (
           <OutgoingOffer key={offer.id} offer={offer} game={game} canManage={canManage} onChoose={(partner) => dispatch({ type: 'completeTradeOffer', offerId: offer.id, partner, player: humanId })} onCancel={() => dispatch({ type: 'cancelTradeOffer', offerId: offer.id, player: humanId })} />

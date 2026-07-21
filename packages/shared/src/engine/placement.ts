@@ -85,7 +85,10 @@ export function stealableOpponents(state: GameState, tile: number, actor: number
   for (const vid of state.board.tiles[tile].vertexIds) {
     const b = state.buildings[vid];
     if (b && b.owner !== actor && (!state.rules.friendlyRobber || publicVictoryPoints(state, b.owner) >= 3)) {
-      const total = Object.values(state.players[b.owner].resources).reduce((s, n) => s + n, 0);
+      const player = state.players[b.owner] as GameState['players'][number] & { handCount?: number };
+      // Online snapshots redact opponents' resource types, but preserve their
+      // public total as handCount so robber victim selection still works.
+      const total = player.handCount ?? Object.values(player.resources).reduce((s, n) => s + n, 0);
       if (total > 0) victims.add(b.owner);
     }
   }

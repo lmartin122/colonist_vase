@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react';
 import { Application } from 'pixi.js';
-import type { Action } from '@colonist/shared';
-import type { Board } from '@colonist/shared';
+import type { Action, GameState } from '@colonist/shared';
 import { BoardRenderer } from '../render/BoardRenderer';
 import { setTileLocator } from '../render/boardAnchors';
 import { loadBoardTextures } from '../render/textures';
@@ -14,6 +13,11 @@ import { useGame } from '../state/store';
 import { useReducedMotionPreference } from '../state/useMotionPreference';
 import { PlayerIcon } from './PlayerDecorations';
 
+export function boardLayoutKey(board: GameState['board']): string {
+  return board.tiles.map((tile) => `${tile.id}:${tile.type}:${tile.number ?? 'x'}`).join('|')
+    + `#${board.vertices.map((vertex) => vertex.port ?? '-').join('|')}`;
+}
+
 /**
  * Hosts the PixiJS board. Owns the Application + BoardRenderer and keeps them in
  * sync with the store: rebuild on a new board, re-sync pieces on any state
@@ -22,7 +26,7 @@ import { PlayerIcon } from './PlayerDecorations';
 export function GameCanvas() {
   const hostRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<BoardRenderer | null>(null);
-  const lastBoard = useRef<Board | null>(null);
+  const lastBoardLayout = useRef<string | null>(null);
   const [ready, setReady] = useState(false);
   const [robberChoice, setRobberChoice] = useState<{ tile: number; action: Extract<Action, { type: 'moveRobber' | 'playKnight' }>['type']; victims: number[] } | null>(null);
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; x: number; y: number; moved: boolean } | null>(null);
@@ -30,12 +34,15 @@ export function GameCanvas() {
   const game = useGame((s) => s.game);
   const build = useGame((s) => s.build);
   const humanId = useGame((s) => s.humanId);
+  const spectator = useGame((s) => s.spectator);
   const dispatch = useGame((s) => s.dispatch);
   const reducedMotion = useReducedMotionPreference();
   const requestRobberVictim = useCallback((tile: number, action: 'moveRobber' | 'playKnight', victims: number[]) => {
     setRobberChoice({ tile, action, victims });
   }, []);
-  const interaction = deriveInteraction(game, build, humanId, dispatch, requestRobberVictim);
+  const interaction = spectator
+    ? null
+    : deriveInteraction(game, build, humanId, dispatch, requestRobberVictim);
 
   const sidebarInset = (width: number) => width >= 1280 ? 320 : width >= 1024 ? 280 : width >= 768 ? 260 : 0;
 
@@ -82,7 +89,7 @@ export function GameCanvas() {
     return () => {
       disposed = true;
       rendererRef.current = null;
-      lastBoard.current = null;
+      lastBoardLayout.current = null;
       setTileLocator(null);
       if (app) app.destroy(true, { children: true });
     };
@@ -92,18 +99,15 @@ export function GameCanvas() {
   useEffect(() => {
     const renderer = rendererRef.current;
     if (!renderer || !game) return;
-    const previous = lastBoard.current;
-    // Moving the robber immutably replaces the Board wrapper but preserves its
-    // structural arrays. Rebuild only for a genuinely new/generated board so
-    // BoardRenderer can retain the robber's previous position and animate it.
-    const boardChanged = !previous
-      || previous.tiles !== game.board.tiles
-      || previous.vertices !== game.board.vertices
-      || previous.edges !== game.board.edges;
+    // Socket snapshots deserialize fresh array/object identities on every
+    // action. Compare the immutable board layout itself so online updates do
+    // not rebuild the renderer and erase piece/robber animation history.
+    const layoutKey = boardLayoutKey(game.board);
+    const boardChanged = lastBoardLayout.current !== layoutKey;
     if (boardChanged) {
       renderer.buildBoard(game.board);
     }
-    lastBoard.current = game.board;
+    lastBoardLayout.current = layoutKey;
     renderer.sync(game);
   }, [game, ready]);
 

@@ -7,6 +7,7 @@ import type { DevCardType, GameState, Resource } from '@colonist/shared';
 import { legalRoadEdges, robberTargetTiles, stealableOpponents } from '@colonist/shared';
 import { nextBotAction } from '@colonist/shared';
 import { deriveFlights } from '../src/state/flights';
+import { automatedActor } from '../src/state/store';
 import type { Action } from '@colonist/shared';
 import { MAX_VICTORY_POINTS } from '@colonist/shared';
 import { canRevealLogResources } from '../src/ui/history';
@@ -78,6 +79,38 @@ describe('bank trading', () => {
 });
 
 describe('trade offers', () => {
+  it('keeps human responses pending until that player answers', () => {
+    let s = autoSetup(game(15));
+    s = {
+      ...s,
+      currentPlayer: 0,
+      phase: 'main',
+      players: s.players.map((player) => player.id === 1 ? { ...player, isBot: false, botDifficulty: null } : player),
+    };
+    s = setRes(s, 0, { ore: 1 });
+    s = setRes(s, 1, { sheep: 1 });
+    s = applyOrThrow(s, { type: 'createTradeOffer', give: { ore: 1 }, receive: { sheep: 1 }, anyCount: 0 });
+    expect(s.tradeOffers[0].responses[1].status).toBe('pending');
+
+    s = applyOrThrow(s, { type: 'respondTradeOffer', offerId: s.tradeOffers[0].id, responder: 1, accepted: true });
+    expect(s.tradeOffers[0].responses[1].status).toBe('accepted');
+  });
+
+  it('lets a human decline an untargeted trade offer', () => {
+    let s = autoSetup(game(18));
+    s = {
+      ...s,
+      currentPlayer: 0,
+      phase: 'main',
+      players: s.players.map((player) => player.id === 1 ? { ...player, isBot: false, botDifficulty: null } : player),
+    };
+    s = setRes(s, 0, { ore: 1 });
+    s = setRes(s, 1, { sheep: 1 });
+    s = applyOrThrow(s, { type: 'createTradeOffer', give: { ore: 1 }, receive: { sheep: 1 }, anyCount: 0 });
+    s = applyOrThrow(s, { type: 'respondTradeOffer', offerId: s.tradeOffers[0].id, responder: 1, accepted: false });
+    expect(s.tradeOffers[0].responses[1].status).toBe('declined');
+  });
+
   it('stores responses, completes a selected acceptance, and clears offers at turn end', () => {
     let s = autoSetup(game(16));
     s = { ...s, currentPlayer: 0, phase: 'main' };
@@ -184,12 +217,48 @@ describe('trade offers', () => {
     s = { ...s, currentPlayer: 1, phase: 'main' };
     s = setRes(s, 1, { wood: 2 });
 
-    expect(nextBotAction(s, 1)).toMatchObject({
+    const action = nextBotAction(s, 1);
+    expect(action).toMatchObject({
       type: 'createTradeOffer',
       give: { wood: 1 },
       receive: { brick: 1 },
-      target: 0,
     });
+    expect(action).not.toHaveProperty('target');
+    s = applyOrThrow(s, action!);
+    expect(automatedActor(s, 0)).toBeNull();
+  });
+
+  it('shows a bot offer to every active human player', () => {
+    let s = autoSetup(createGame({
+      players: [
+        { name: 'Human A', isBot: false },
+        { name: 'Bot', isBot: true },
+        { name: 'Human B', isBot: false },
+        { name: 'Bot B', isBot: true },
+      ],
+      layout: 'classic',
+      seed: 24,
+    }));
+    s = { ...s, currentPlayer: 1, phase: 'main' };
+    s = setRes(s, 1, { wood: 2 });
+    s = setRes(s, 0, { brick: 1 });
+    s = setRes(s, 2, { brick: 1 });
+
+    const action = nextBotAction(s, 1);
+    expect(action).toMatchObject({ type: 'createTradeOffer' });
+    s = applyOrThrow(s, action!);
+
+    expect(s.tradeOffers[0].target).toBeNull();
+    expect(s.tradeOffers[0].responses[0].status).toBe('pending');
+    expect(s.tradeOffers[0].responses[2].status).toBe('pending');
+    expect(s.pending.botTradeOfferedThisTurn[1]).toBe(true);
+
+    s = applyOrThrow(s, { type: 'respondTradeOffer', offerId: s.tradeOffers[0].id, responder: 0, accepted: true });
+    expect(s.tradeOffers[0].responses[2].status).toBe('pending');
+    expect(nextBotAction(s, 1)).toBeNull();
+
+    s = applyOrThrow(s, { type: 'respondTradeOffer', offerId: s.tradeOffers[0].id, responder: 2, accepted: false });
+    expect(nextBotAction(s, 1)).toMatchObject({ type: 'completeTradeOffer', partner: 0 });
   });
 
   it('collects bot responses while waiting, then lets the proposer trade with an accepting bot', () => {

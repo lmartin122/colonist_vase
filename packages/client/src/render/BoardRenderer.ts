@@ -90,7 +90,7 @@ export class BoardRenderer {
   private readonly overlay = new Container();
 
   private board: Board | null = null;
-  private seenBuildings = new Set<number>();
+  private seenBuildings = new Set<string>();
   private seenRoads = new Set<number>();
   private anims: Anim[] = [];
   private robberSprite: Container | null = null;
@@ -448,7 +448,7 @@ export class BoardRenderer {
       const color = state.players[building.owner].color;
       const piece = building.type === 'city' ? this.buildCity(p, color) : this.buildSettlement(p, color);
       this.pieces.addChild(piece);
-      this.animateIfNew(this.seenBuildings, Number(vStr), piece);
+      this.animateIfNew(this.seenBuildings, `${vStr}:${building.type}`, piece);
     }
 
     // Robber
@@ -629,7 +629,7 @@ export class BoardRenderer {
     return c;
   }
 
-  private animateIfNew(seen: Set<number>, id: number, target: Container): void {
+  private animateIfNew<T>(seen: Set<T>, id: T, target: Container): void {
     if (seen.has(id)) return;
     seen.add(id);
     if (this.reducedMotion) return;
