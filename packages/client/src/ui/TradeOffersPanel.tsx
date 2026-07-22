@@ -103,7 +103,10 @@ function TradeSide({ children }: { children: ReactNode }) { return <div classNam
 function TradeResponseDecoration({ player, status }: { player: Player; status: 'pending' | 'accepted' | 'declined' }) {
   return (
     <span className="relative block h-12 w-12">
-      <PlayerScorePortrait player={player} points={0} showName={false} showRibbon={false} className="h-12 w-12" />
+      {/* Muted once answered so the accept/decline mark reads clearly even
+          against a same-colored portrait (a red ✗ over a red player icon,
+          for instance, used to all but disappear). */}
+      <PlayerScorePortrait player={player} points={0} showName={false} showRibbon={false} className={`h-12 w-12 transition-opacity ${status !== 'pending' ? 'opacity-30' : ''}`} />
       {status !== 'pending' && (
         <span className={`absolute inset-1 z-40 flex items-center justify-center rounded-full text-2xl font-black ring-2 ${status === 'accepted' ? 'bg-p-green/20 text-p-green ring-p-green/60' : 'bg-p-red/20 text-p-red ring-p-red/60'}`} aria-hidden="true">
           {status === 'accepted' ? '✓' : '×'}

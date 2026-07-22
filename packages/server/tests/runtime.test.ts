@@ -174,7 +174,18 @@ describe('RoomManager', () => {
 
     const system = mgr.systemChat(room, 'The game has started.');
     expect(system).toMatchObject({ seat: null, color: null, system: true });
+    expect(system.kind).toBeUndefined();
     expect(room.chat).toHaveLength(2);
+  });
+
+  it('tags a join/leave systemChat with the kind that drives the client sound', () => {
+    const mgr = new RoomManager();
+    const room = mgr.create('dev|host', 'Host', {});
+
+    expect(mgr.systemChat(room, 'Alice joined the room.', 'join')).toMatchObject({ kind: 'join', system: true });
+    expect(mgr.systemChat(room, 'Alice left the room.', 'leave')).toMatchObject({ kind: 'leave', system: true });
+    // Other notices (rematch prompts, "game started", …) opt out on purpose.
+    expect(mgr.systemChat(room, 'Bob wants to play again.').kind).toBeUndefined();
   });
 
   it('caps chat history at MAX_CHAT_HISTORY, keeping the most recent lines', () => {

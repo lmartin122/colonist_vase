@@ -55,16 +55,20 @@ function scheduleDeparture(room: Room, userId: string): void {
     const current = rooms.get(room.code);
     const seat = current && seatOfUser(current, userId);
     if (!current || !seat || seat.connected) return;
+    const departedName = seat.name;
     if (current.phase === 'lobby') {
       const hasHumans = rooms.leaveLobby(current, userId);
-      if (hasHumans) broadcastRoom(current);
-      else rooms.delete(current.code);
+      if (hasHumans) {
+        broadcastRoom(current);
+        io.to(current.code).emit('chat', rooms.systemChat(current, `${departedName} left the room.`, 'leave'));
+      } else rooms.delete(current.code);
       return;
     }
     if (current.phase === 'playing' && rooms.replaceWithBot(current, userId)) {
       const ended = rooms.endIfOnlyBotsRemain(current);
       if (ended) void finishIfOver(current);
       broadcastRoom(current);
+      io.to(current.code).emit('chat', rooms.systemChat(current, `${departedName} left; a bot took over.`, 'leave'));
       broadcastState(current);
       if (!ended) void driveAndBroadcast(current);
     }
@@ -297,7 +301,7 @@ io.on('connection', (socket) => {
   socket.on('joinRoom', ({ code }, ack) => {
     const room = rooms.get(code);
     if (!room) return ack(fail('Room not found'));
-    const isNewSeat = !seatOfUser(room, userId);
+    const before = seatOfUser(room, userId);
     const result = rooms.join(room, userId, name, socket.id);
     if (typeof result === 'string') return ack(fail(result));
     cancelDeparture(room.code, userId);
@@ -305,7 +309,8 @@ io.on('connection', (socket) => {
     socket.join(room.code);
     broadcastRoom(room);
     emitChatHistory(room, socket.id);
-    if (isNewSeat) io.to(room.code).emit('chat', rooms.systemChat(room, `${name} joined the room.`));
+    if (!before) io.to(room.code).emit('chat', rooms.systemChat(room, `${name} joined the room.`, 'join'));
+    else if (before.isBot) io.to(room.code).emit('chat', rooms.systemChat(room, `${name} rejoined and took control.`, 'join'));
     // Reconnection: replay the current game view straight to this socket.
     if (room.phase !== 'lobby' && room.state) {
       broadcastState(room);
@@ -319,6 +324,7 @@ io.on('connection', (socket) => {
 
     const existing = seatOfUser(room, userId);
     if (existing) {
+      const wasAbandoned = existing.isBot;
       const result = rooms.join(room, userId, name, socket.id);
       if (typeof result === 'string') return ack(fail(result));
       cancelDeparture(room.code, userId);
@@ -326,6 +332,7 @@ io.on('connection', (socket) => {
       socket.join(room.code);
       broadcastRoom(room);
       emitChatHistory(room, socket.id);
+      if (wasAbandoned) io.to(room.code).emit('chat', rooms.systemChat(room, `${name} rejoined and took control.`, 'join'));
       broadcastState(room);
       return ack(ok({ code: room.code, seat: result.seat }));
     }
@@ -362,8 +369,10 @@ io.on('connection', (socket) => {
         cancelDeparture(room.code, userId);
         rooms.disconnect(room, socket.id);
         const hasHumans = rooms.leaveLobby(room, userId);
-        if (hasHumans) broadcastRoom(room);
-        else rooms.delete(room.code);
+        if (hasHumans) {
+          broadcastRoom(room);
+          io.to(room.code).emit('chat', rooms.systemChat(room, `${name} left the room.`, 'leave'));
+        } else rooms.delete(room.code);
       } else {
         cancelDeparture(room.code, userId);
         const disconnectedSeat = rooms.disconnect(room, socket.id);
@@ -373,6 +382,7 @@ io.on('connection', (socket) => {
           if (ended) void finishIfOver(room);
           broadcastRoom(room);
           if (replaced) {
+            io.to(room.code).emit('chat', rooms.systemChat(room, `${name} left; a bot took over.`, 'leave'));
             broadcastState(room);
             if (!ended) void driveAndBroadcast(room);
           }

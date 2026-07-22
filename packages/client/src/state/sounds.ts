@@ -10,7 +10,8 @@ import { canAfford, isConcurrentPhase, type Action, type GameState } from '@colo
 const AUDIO = '/audios';
 
 const FILES = {
-  // Lobby / menu (reserved for the future multiplayer lobby).
+  // Lobby / room (played from state/online.ts on a 'chat' system message with
+  // a matching `kind` — someone joining/rejoining or leaving an online room).
   joinRoom: 'sfx_join_room.5961c5707bc03a482185.mp3',
   leaveRoom: 'sfx_leave_room.471d70cdfe103a4afdce.mp3',
   // In-game.

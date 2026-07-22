@@ -911,7 +911,11 @@ function HumanDock({ game }: { game: GameState }) {
           ref={actionPanelRef}
           className={`relative flex w-full min-w-0 shrink-0 items-stretch justify-start gap-1.5 overflow-x-auto p-1.5 xl:w-auto xl:min-w-[520px] xl:justify-between xl:overflow-visible xl:p-2 ${CARD}`}
         >
-          {myTurn && (canStartRoll || canRoll || game.dice) && (
+          {/* Shown on any player's turn once there's a result to see, not just
+              yours — `dice` resets to null on `endTurn`, so this always reflects
+              whoever is currently rolling. `onRoll` stays undefined off-turn
+              since canStartRoll/canTakeRoll already require myTurn. */}
+          {(canStartRoll || canRoll || game.dice) && (
             <RollDiceDisplay
               dice={game.dice}
               onRoll={
@@ -1086,7 +1090,9 @@ function TurnCountdown({ game }: { game: GameState }) {
   const [remaining, setRemaining] = useState<number>(seconds);
   const gameRef = useRef(game);
   gameRef.current = game;
-  const actionKey = `${game.phase}-${game.currentPlayer}-${game.turn}-${game.setup?.step ?? ''}-${game.setup?.lastSettlement ?? ''}-${game.pending.discards[humanId] ?? ''}`;
+  // `log.length` grows on every accepted action, so taking one during your turn
+  // refreshes the clock instead of it running out from under an active player.
+  const actionKey = `${game.phase}-${game.currentPlayer}-${game.turn}-${game.setup?.step ?? ''}-${game.setup?.lastSettlement ?? ''}-${game.pending.discards[humanId] ?? ''}-${game.log.length}`;
 
   useEffect(() => {
     if (!humanMustAct || infiniteTime || game.phase === 'gameOver') return;
@@ -1124,12 +1130,14 @@ function RoundCountdown({ game }: { game: GameState }) {
   const humanWaiting = isConcurrentPhase(game) && !game.pending.passed[humanId];
   const seconds = game.rules.turnTimer;
   const [remaining, setRemaining] = useState<number>(seconds);
-  const clock = useRef<{ turn: number; startedAt: number }>({ turn: -1, startedAt: 0 });
+  const clock = useRef<{ turn: number; logLength: number; startedAt: number }>({ turn: -1, logLength: 0, startedAt: 0 });
 
   useEffect(() => {
     if (!humanWaiting) return;
-    if (clock.current.turn !== game.turn) {
-      clock.current = { turn: game.turn, startedAt: Date.now() };
+    // A new round, or any action taken since the last tick, refreshes the
+    // clock instead of it running out from under an active table.
+    if (clock.current.turn !== game.turn || clock.current.logLength !== game.log.length) {
+      clock.current = { turn: game.turn, logLength: game.log.length, startedAt: Date.now() };
     }
     const update = () => {
       const left = seconds - Math.floor((Date.now() - clock.current.startedAt) / 1000);
@@ -1142,7 +1150,7 @@ function RoundCountdown({ game }: { game: GameState }) {
       if (update() <= 0) clearInterval(interval);
     }, 1000);
     return () => clearInterval(interval);
-  }, [dispatch, game.turn, humanId, humanWaiting, seconds]);
+  }, [dispatch, game.turn, game.log.length, humanId, humanWaiting, seconds]);
 
   if (!isConcurrentPhase(game)) return null;
   return (

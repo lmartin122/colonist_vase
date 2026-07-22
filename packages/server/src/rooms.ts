@@ -308,8 +308,9 @@ export class RoomManager {
     });
   }
 
-  /** Post a system notice (joins, game start, …). */
-  systemChat(room: Room, text: string): ChatMessage {
+  /** Post a system notice (joins, game start, …). `kind` drives a client sound
+   *  for join/leave notices; omit it for notices that shouldn't play one. */
+  systemChat(room: Room, text: string, kind?: 'join' | 'leave'): ChatMessage {
     return this.appendChat(room, {
       id: ++room.chatSeq,
       seat: null,
@@ -318,6 +319,7 @@ export class RoomManager {
       text,
       ts: Date.now(),
       system: true,
+      kind,
     });
   }
 

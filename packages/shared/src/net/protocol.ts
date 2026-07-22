@@ -163,6 +163,8 @@ export interface ChatMessage {
   text: string;
   ts: number;
   system?: boolean;
+  /** Drives a join/leave sound on the client; unset for other system notices. */
+  kind?: 'join' | 'leave';
 }
 
 // ---------------------------------------------------------------------------

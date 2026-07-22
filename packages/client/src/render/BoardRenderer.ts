@@ -482,17 +482,18 @@ export class BoardRenderer {
     const sprite = this.sprite(roadFrame(color));
     if (sprite) {
       sprite.anchor.set(0.5);
-      // Road art is a vertical bar; align its long axis with the edge.
-      sprite.scale.set((edgeLen * 0.92) / sprite.texture.height);
+      // Road art is a vertical bar; align its long axis with the edge. Full
+      // edge length so adjacent roads visually touch at a shared vertex
+      // instead of leaving a gap — any overshoot into the vertex is covered
+      // by the building sprite drawn there (buildings render after roads).
+      sprite.scale.set(edgeLen / sprite.texture.height);
       sprite.rotation = angle - Math.PI / 2;
       c.addChild(sprite);
     } else {
       const hex = PLAYER_HEX[color];
       const g = new Graphics();
-      const ax = a.x + (b.x - a.x) * 0.18, ay = a.y + (b.y - a.y) * 0.18;
-      const bx = b.x + (a.x - b.x) * 0.18, by = b.y + (a.y - b.y) * 0.18;
-      g.moveTo(ax, ay).lineTo(bx, by).stroke({ width: 13, color: darken(hex, 0.65), cap: 'round' });
-      g.moveTo(ax, ay).lineTo(bx, by).stroke({ width: 9, color: hex, cap: 'round' });
+      g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 13, color: darken(hex, 0.65), cap: 'round' });
+      g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 9, color: hex, cap: 'round' });
       g.pivot.set(mid.x, mid.y);
       c.addChild(g);
     }

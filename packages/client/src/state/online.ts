@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { MAX_CHAT_HISTORY, type ChatMessage, type RoomSnapshot } from '@colonist/shared';
 import { connectSocket, disconnectSocket, findMyRoom, joinRoom, sendChat, watchGame } from '../net/socket';
+import { playSound } from './sounds';
 import { useGame } from './store';
 
 export type ConnStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -80,11 +81,16 @@ export const useOnline = create<OnlineState>((set, get) => ({
         return;
       }
       // No room in THIS tab: ask whether the account still holds a seat
-      // somewhere, so "Rejoin" survives a new tab, browser or device.
+      // somewhere, so "Rejoin" survives a new tab, browser or device. This is
+      // also the only chance to notice a STALE rejoin target: if the room we
+      // remembered from a past session has since ended or been swept away
+      // server-side, we never got a live 'room'/'gameOver' push to tell us —
+      // so an empty answer here must actively clear it, not just be ignored.
       void findMyRoom().then((result) => {
-        if (!result.ok || !result.data || get().code) return;
-        rememberLastCode(result.data.code);
-        set({ lastCode: result.data.code });
+        if (!result.ok || get().code) return;
+        const code = result.data?.code ?? null;
+        rememberLastCode(code);
+        set({ lastCode: code });
       });
     });
     socket.on('connect_error', (err) => set({ status: 'error', error: err.message }));
@@ -108,10 +114,13 @@ export const useOnline = create<OnlineState>((set, get) => ({
       set({ gameOver: payload, lastCode: null });
     });
     socket.on('errorMsg', ({ message }) => set({ error: message }));
+    // Replayed history is not a live event — no sound for it, only for `chat`.
     socket.on('chatHistory', ({ messages }) => set({ messages }));
-    socket.on('chat', (message) =>
-      set((state) => ({ messages: [...state.messages, message].slice(-MAX_CHAT_HISTORY) })),
-    );
+    socket.on('chat', (message) => {
+      if (message.kind === 'join') playSound('joinRoom');
+      else if (message.kind === 'leave') playSound('leaveRoom');
+      set((state) => ({ messages: [...state.messages, message].slice(-MAX_CHAT_HISTORY) }));
+    });
 
     // Reconcile immediately: if the socket was ALREADY connected when we
     // (re)bound handlers — e.g. React StrictMode's double-invoke in dev — the
