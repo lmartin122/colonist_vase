@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createGame, type GameState } from '@colonist/shared';
 import { authorizeSeat, botActor, driveBots } from '../src/runtime';
-import { RoomManager } from '../src/rooms';
+import { RoomManager, snapshot } from '../src/rooms';
 
 function allBotGame(seed: number): GameState {
   return createGame({
@@ -255,6 +255,20 @@ describe('RoomManager', () => {
     room.rematch!.votes[0] = 'no';
     expect(mgr.rematchSettled(room)).toBe(true);
     expect(mgr.applyRematch(room)).toBe(false);
+  });
+
+  it('reports spectators in the snapshot, deduplicated per account', () => {
+    const mgr = new RoomManager();
+    const room = mgr.create('dev|host', 'Host', {});
+    expect(snapshot(room).spectators).toEqual([]);
+
+    // Same account watching from two tabs counts once; a second account adds one.
+    room.spectators.set('sockA1', { userId: 'dev|watcher', name: 'Wanda' });
+    room.spectators.set('sockA2', { userId: 'dev|watcher', name: 'Wanda' });
+    room.spectators.set('sockB1', { userId: 'dev|other', name: 'Otto' });
+
+    const names = snapshot(room).spectators.map((s) => s.name).sort();
+    expect(names).toEqual(['Otto', 'Wanda']);
   });
 
   it('reuses the seat on re-join (reconnection)', () => {

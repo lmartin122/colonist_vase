@@ -91,15 +91,22 @@ export const useOnline = create<OnlineState>((set, get) => ({
     socket.on('disconnect', () => set({ status: 'disconnected' }));
 
     socket.on('room', (room) => {
-      rememberLastCode(room.code);
+      // A finished room is not a rejoin target; keep lastCode cleared for it.
+      const rejoinable = room.phase !== 'over';
+      rememberLastCode(rejoinable ? room.code : null);
       const hasViewerSeat = room.yourSeat !== undefined;
       const seat = hasViewerSeat ? (room.yourSeat ?? null) : get().seat;
-      set({ room, code: room.code, lastCode: room.code, seat, spectating: hasViewerSeat ? seat === null : get().spectating });
+      set({ room, code: room.code, lastCode: rejoinable ? room.code : null, seat, spectating: hasViewerSeat ? seat === null : get().spectating });
     });
     socket.on('gameState', ({ state, yourSeat, action }) =>
       useGame.getState().applyServerState(state, yourSeat, action),
     );
-    socket.on('gameOver', (payload) => set({ gameOver: payload }));
+    socket.on('gameOver', (payload) => {
+      // A finished game can't be rejoined, so forget it — otherwise the start
+      // screen keeps offering a dead "Rejoin game" button.
+      rememberLastCode(null);
+      set({ gameOver: payload, lastCode: null });
+    });
     socket.on('errorMsg', ({ message }) => set({ error: message }));
     socket.on('chatHistory', ({ messages }) => set({ messages }));
     socket.on('chat', (message) =>

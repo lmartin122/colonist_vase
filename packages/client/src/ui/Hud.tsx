@@ -114,8 +114,12 @@ function SpectatorHud({ game }: { game: GameState }) {
     <div className="pointer-events-none absolute inset-0 select-none font-sans">
       <div className="absolute inset-y-0 left-0 right-0 md:right-[260px] lg:right-[280px] xl:right-[320px]">
         <TopBar game={game} />
-        <div className="pointer-events-auto absolute left-3 top-3 z-40 flex min-h-11 items-center gap-2 rounded-2xl bg-card/95 p-1.5 pl-3 text-ink shadow-panel ring-1 ring-black/5 backdrop-blur-sm dark:ring-white/15">
-          <span className="text-xs font-extrabold">Spectating {code ?? ''}</span>
+        {/* Below the global theme toggle (left-14 top-3) so they don't overlap. */}
+        <div className="pointer-events-auto absolute left-3 top-16 z-40 flex min-h-11 items-center gap-2 rounded-2xl bg-card/95 p-1.5 pl-3 text-ink shadow-panel ring-1 ring-black/5 backdrop-blur-sm sm:top-[4.75rem] dark:ring-white/15">
+          <span className="flex items-center gap-1.5 text-xs font-extrabold">
+            <span aria-hidden="true">👁️</span>
+            Spectating {code ?? ''}
+          </span>
           <button
             type="button"
             onClick={() => { void exitGame(); }}
@@ -189,8 +193,29 @@ function TopBar({ game }: { game: GameState }) {
         {thinking && (
           <span className="ml-0.5 animate-pulse text-[11px] text-ink-faint">thinking…</span>
         )}
+        <InGameSpectators />
       </div>
     </div>
+  );
+}
+
+/** Eye badge in the top bar so players (and other watchers) see who's watching. */
+function InGameSpectators() {
+  const spectators = useOnline((state) => state.room?.spectators);
+  if (!spectators?.length) return null;
+  const names = spectators.map((viewer) => viewer.name).join(', ');
+  return (
+    <>
+      <span className="text-ink-faint">·</span>
+      <span
+        title={`Watching: ${names}`}
+        aria-label={`${spectators.length} watching: ${names}`}
+        className="flex items-center gap-1 text-xs font-bold text-ink-soft"
+      >
+        <span aria-hidden="true">👁️</span>
+        {spectators.length}
+      </span>
+    </>
   );
 }
 

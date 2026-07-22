@@ -4,3 +4,4 @@
 export * from './engine';
 export * from './ai/bot';
 export * from './net/protocol';
+export * from './net/username';

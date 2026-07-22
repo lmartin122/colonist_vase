@@ -136,6 +136,8 @@ export interface RoomSnapshot {
   rules: GameRules;
   layout: string;
   maxPlayers: number;
+  /** Connected read-only viewers, deduplicated per account. */
+  spectators: { name: string }[];
   /** Set while a "play again" proposal is awaiting answers. */
   rematch: RematchState | null;
 }

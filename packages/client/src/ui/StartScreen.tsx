@@ -19,6 +19,8 @@ import { PackedSprite } from './PackedSprite';
 import { PlayerColorBackground, PlayerIcon } from './PlayerDecorations';
 import { ChatPanel } from './ChatPanel';
 import { ProfileModal } from './ProfileModal';
+import { UsernameDialog } from './UsernameDialog';
+import { useProfile } from '../auth/useProfile';
 import { AUTH_CONFIGURED, DEV_LOGIN } from '../auth/config';
 import { useDevAuth } from '../auth/devIdentity';
 import {
@@ -49,6 +51,10 @@ interface StartAccount {
   login: () => void;
   logout: () => void;
   getToken?: () => Promise<string>;
+  /** Chosen display name; null in local-dev mode, where the name IS the login. */
+  username?: string | null;
+  /** Resolves with an error message, or null on success. */
+  saveUsername?: (username: string) => Promise<string | null>;
 }
 
 /** Unified landing screen account adapter for local dev-login. */
@@ -99,38 +105,57 @@ function AuthStartScreen() {
   const connect = useOnline((state) => state.connect);
   const disconnect = useOnline((state) => state.disconnect);
   const status = useOnline((state) => state.status);
+  const getToken = isAuthenticated ? getAccessTokenSilently : undefined;
+  const { profile, error: profileError, needsUsername, saveUsername } = useProfile(getToken);
+  const username = profile?.username ?? null;
+  // If the profile can't be loaded the server is down, so online play is out
+  // anyway — fall back to the Auth0 name rather than leaving a dead screen.
+  const accountReady = isAuthenticated && !isLoading && (Boolean(username) || Boolean(profileError));
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    // Wait for the username: the seat name comes from the server, and connecting
+    // first would seat this player under their Auth0 name (an email) until they
+    // reconnect.
+    if (!isAuthenticated || !username) return;
     let cancelled = false;
     getAccessTokenSilently()
       .then((token) => {
-        // Auth0 access tokens carry no profile claims, so pass the ID-token name.
-        if (!cancelled) connect(token, user?.name ?? user?.nickname ?? '');
+        if (!cancelled) connect(token, username);
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [connect, getAccessTokenSilently, isAuthenticated, user]);
+  }, [connect, getAccessTokenSilently, isAuthenticated, username]);
 
   return (
-    <StartScreenContent
-      account={{
-        ready: isAuthenticated && !isLoading,
-        sub: user?.sub ?? '',
-        name: user?.name ?? 'Player',
-        status,
-        login: () => {
-          void loginWithRedirect();
-        },
-        logout: () => {
-          disconnect();
-          logout({ logoutParams: { returnTo: window.location.origin } });
-        },
-        getToken: getAccessTokenSilently,
-      }}
-    />
+    <>
+      <StartScreenContent
+        account={{
+          ready: accountReady,
+          sub: user?.sub ?? '',
+          name: username ?? user?.name ?? 'Player',
+          status,
+          login: () => {
+            void loginWithRedirect();
+          },
+          logout: () => {
+            disconnect();
+            logout({ logoutParams: { returnTo: window.location.origin } });
+          },
+          getToken: getAccessTokenSilently,
+          username,
+          saveUsername,
+        }}
+      />
+      <UsernameDialog
+        open={needsUsername}
+        current={null}
+        dismissable={false}
+        onClose={() => {}}
+        onSave={saveUsername}
+      />
+    </>
   );
 }
 
@@ -546,6 +571,8 @@ function StartScreenContent({ account }: { account: StartAccount }) {
         open={profileOpen}
         onClose={closeProfile}
         accountName={account.name}
+        username={account.username}
+        onSaveUsername={account.saveUsername}
         getOnlineToken={account.getToken}
         onLogout={() => {
           setProfileOpen(false);
@@ -726,6 +753,7 @@ function OnlinePlayerSlots({
         <span className="text-xs font-bold uppercase tracking-wide text-ink-faint">
           Players · {room.seats.length}/{room.maxPlayers}
         </span>
+        <SpectatorBadge spectators={room.spectators} />
       </div>
       <div className="flex flex-col gap-2 min-[850px]:min-h-0 min-[850px]:flex-1">
         {room.seats.map((seat) => {
@@ -805,6 +833,22 @@ function OnlinePlayerSlots({
         ))}
       </div>
     </div>
+  );
+}
+
+/** Eye badge showing how many people are watching, names in the tooltip. */
+function SpectatorBadge({ spectators }: { spectators: { name: string }[] }) {
+  if (!spectators.length) return null;
+  const names = spectators.map((viewer) => viewer.name).join(', ');
+  return (
+    <span
+      title={`Watching: ${names}`}
+      aria-label={`${spectators.length} watching: ${names}`}
+      className="flex items-center gap-1 rounded-full bg-ink/10 px-2 py-0.5 text-[11px] font-extrabold text-ink-soft"
+    >
+      <span aria-hidden="true">👁️</span>
+      {spectators.length}
+    </span>
   );
 }
 

@@ -47,8 +47,8 @@ export interface Room {
   seed: number | null;
   startedAt: number | null;
   botRunning: boolean;
-  /** Connected read-only viewers. They never occupy a player seat. */
-  spectators: Set<string>;
+  /** Connected read-only viewers by socket id. They never occupy a player seat. */
+  spectators: Map<string, { userId: string; name: string }>;
   /** Invalidates an in-flight bot loop when seat control changes. */
   runtimeVersion: number;
   createdAt: number;
@@ -89,6 +89,10 @@ export function snapshot(room: Room): RoomSnapshot {
     userId: s.userId,
   }));
   const proposer = room.rematch ? room.seats.find((s) => s.seat === room.rematch!.proposedBy) : undefined;
+  // Dedupe by account so one person watching from several tabs counts once.
+  const spectators = [...new Map(
+    [...room.spectators.values()].map((viewer) => [viewer.userId, viewer.name]),
+  )].map(([, name]) => ({ name }));
   return {
     code: room.code,
     phase: room.phase,
@@ -97,6 +101,7 @@ export function snapshot(room: Room): RoomSnapshot {
     rules: room.rules,
     layout: room.layout,
     maxPlayers: room.maxPlayers,
+    spectators,
     rematch: room.rematch
       ? {
           proposedBy: room.rematch.proposedBy,
@@ -146,7 +151,7 @@ export class RoomManager {
       seed: null,
       startedAt: null,
       botRunning: false,
-      spectators: new Set(),
+      spectators: new Map(),
       runtimeVersion: 0,
       createdAt: Date.now(),
       chat: [],

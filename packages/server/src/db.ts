@@ -1,4 +1,4 @@
-import { RESOURCES, longestRoadLength, victoryPoints } from '@colonist/shared';
+import { RESOURCES, longestRoadLength, normalizeUsername, usernameKey, victoryPoints } from '@colonist/shared';
 import type { DevCardType, PlayerStats, Resource } from '@colonist/shared';
 import { config } from './config';
 import type { Room } from './rooms';
@@ -32,17 +32,77 @@ async function db(): Promise<Prisma> {
   return client;
 }
 
-export async function upsertUser(auth0Sub: string, name: string): Promise<void> {
+/**
+ * Record the Auth0 profile name and return the player's chosen username, if any.
+ * Only `name` is refreshed — a chosen username is never overwritten by Auth0.
+ */
+export async function upsertUser(auth0Sub: string, name: string): Promise<string | null> {
   const prisma = await db();
-  if (!prisma) return;
+  if (!prisma) return null;
   try {
-    await prisma.user.upsert({
+    const user = await prisma.user.upsert({
       where: { auth0Sub },
       update: { name },
       create: { auth0Sub, name },
+      select: { username: true },
     });
+    return user.username ?? null;
   } catch (err) {
     console.error('[db] upsertUser failed:', (err as Error).message);
+    return null;
+  }
+}
+
+/** False when no DATABASE_URL is configured, so profiles cannot be stored. */
+export async function isPersistenceEnabled(): Promise<boolean> {
+  return Boolean(await db());
+}
+
+export interface Profile {
+  name: string;
+  username: string | null;
+}
+
+export async function getProfile(auth0Sub: string): Promise<Profile | null> {
+  const prisma = await db();
+  if (!prisma) return null;
+  try {
+    const user = await prisma.user.findUnique({
+      where: { auth0Sub },
+      select: { name: true, username: true },
+    });
+    return user ? { name: user.name, username: user.username ?? null } : null;
+  } catch (err) {
+    console.error('[db] getProfile failed:', (err as Error).message);
+    return null;
+  }
+}
+
+/** Postgres unique-violation, surfaced by Prisma as P2002. */
+function isUniqueViolation(err: unknown): boolean {
+  return (err as { code?: string })?.code === 'P2002';
+}
+
+export type SetUsernameResult = 'ok' | 'taken' | 'unavailable';
+
+/**
+ * Claim a username. Uniqueness is enforced by the index on `usernameLower`, so
+ * two players racing for the same name cannot both win.
+ */
+export async function setUsername(auth0Sub: string, username: string): Promise<SetUsernameResult> {
+  const prisma = await db();
+  if (!prisma) return 'unavailable';
+  const display = normalizeUsername(username);
+  try {
+    await prisma.user.update({
+      where: { auth0Sub },
+      data: { username: display, usernameLower: usernameKey(display) },
+    });
+    return 'ok';
+  } catch (err) {
+    if (isUniqueViolation(err)) return 'taken';
+    console.error('[db] setUsername failed:', (err as Error).message);
+    return 'unavailable';
   }
 }
 

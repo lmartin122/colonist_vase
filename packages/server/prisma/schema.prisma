@@ -18,7 +18,13 @@ datasource db {
 model User {
   id        String       @id @default(cuid())
   auth0Sub  String       @unique
+  // Profile name from Auth0. For database (email/password) connections this IS
+  // the email, which is why players need a username of their own.
   name      String
+  // Player-chosen display name; null until they pick one. `usernameLower` is the
+  // normalized form the unique index is on, so "Ada" and "ada" can't coexist.
+  username      String?
+  usernameLower String?  @unique
   createdAt DateTime     @default(now())
   wins      Game[]       @relation("winner")
   players   GamePlayer[]

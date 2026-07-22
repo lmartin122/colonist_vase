@@ -6,6 +6,7 @@ import { RESOURCES, type DevCardType } from '@colonist/shared';
 import { useGame } from '../state/store';
 import { emptyProfileStats, loadProfileStats, normalizeProfileStats, type OverallProfileStats } from '../state/profileStats';
 import { PlayerIcon } from './PlayerDecorations';
+import { UsernameDialog } from './UsernameDialog';
 import { SERVER_URL } from '../auth/config';
 
 type Page = 'overview' | 'dice' | 'resources' | 'building' | 'activity' | 'progress' | 'online';
@@ -26,8 +27,9 @@ const DEV_LABELS: Record<DevCardType, string> = {
   victoryPoint: 'VP cards',
 };
 
-export function ProfileModal({ open, onClose, accountName = 'Your profile', onLogout, getOnlineToken }: { open: boolean; onClose: () => void; accountName?: string; onLogout?: () => void; getOnlineToken?: () => Promise<string> }) {
+export function ProfileModal({ open, onClose, accountName = 'Your profile', onLogout, getOnlineToken, username, onSaveUsername }: { open: boolean; onClose: () => void; accountName?: string; onLogout?: () => void; getOnlineToken?: () => Promise<string>; username?: string | null; onSaveUsername?: (username: string) => Promise<string | null> }) {
   const [page, setPage] = useState<Page>('overview');
+  const [renaming, setRenaming] = useState(false);
   const [statsScope, setStatsScope] = useState<'offline' | 'online'>(getOnlineToken ? 'online' : 'offline');
   const [offlineStats, setOfflineStats] = useState<OverallProfileStats>(loadProfileStats);
   const [onlineStats, setOnlineStats] = useState<OverallProfileStats | null>(null);
@@ -35,6 +37,8 @@ export function ProfileModal({ open, onClose, accountName = 'Your profile', onLo
   const enableDebug = useGame((state) => state.enableDebug);
   const [onlineGames, setOnlineGames] = useState<OnlineGameRow[] | null>(null);
   const [onlineError, setOnlineError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const onlineLoading = statsScope === 'online' && onlineStats === null && !onlineError;
   const stats = statsScope === 'online' ? (onlineStats ?? emptyProfileStats()) : offlineStats;
 
   useEffect(() => {
@@ -73,7 +77,7 @@ export function ProfileModal({ open, onClose, accountName = 'Your profile', onLo
       })
       .catch((error: unknown) => { if (!cancelled) setOnlineError(error instanceof Error ? error.message : 'Could not load online history'); });
     return () => { cancelled = true; };
-  }, [getOnlineToken, open]);
+  }, [getOnlineToken, open, reloadKey]);
 
   if (typeof document === 'undefined') return null;
   return createPortal(
@@ -97,7 +101,31 @@ export function ProfileModal({ open, onClose, accountName = 'Your profile', onLo
           >
             <header className="flex shrink-0 items-center gap-3 border-b border-ink/10 p-4 dark:border-white/10">
               <span className="flex h-12 w-12 items-center justify-center rounded-full bg-card-alt ring-2 ring-p-green/70"><PlayerIcon isBot={false} className="h-8 w-8" /></span>
-              <div><h2 id="profile-title" className="font-display text-xl font-extrabold">{accountName}</h2><p className="text-xs text-ink-soft">{statsScope === 'online' ? (onlineStats ? 'Online statistics saved on the server' : 'Loading server statistics...') : 'Offline games against bots saved on this device'}</p></div>
+              <div className="min-w-0">
+                <h2 id="profile-title" className="flex items-center gap-2 font-display text-xl font-extrabold">
+                  <span className="truncate">{accountName}</span>
+                  {onSaveUsername && (
+                    <button
+                      type="button"
+                      onClick={() => setRenaming(true)}
+                      title="Change your username"
+                      aria-label="Change your username"
+                      className="shrink-0 rounded-lg bg-card-alt px-2 py-1 text-xs font-bold text-ink-soft transition hover:bg-ink/10 hover:text-ink"
+                    >
+                      ✏️
+                    </button>
+                  )}
+                </h2>
+                <p className={`text-xs ${statsScope === 'online' && onlineError ? 'font-bold text-p-red' : 'text-ink-soft'}`}>
+                  {statsScope === 'online'
+                    ? onlineError
+                      ? `Could not load server statistics (${onlineError})`
+                      : onlineStats
+                        ? 'Online statistics saved on the server'
+                        : 'Loading server statistics…'
+                    : 'Offline games against bots saved on this device'}
+                </p>
+              </div>
               <button type="button" onClick={onClose} aria-label="Close profile" className="ml-auto flex h-11 w-11 items-center justify-center rounded-xl bg-card-alt text-xl font-bold text-ink transition hover:bg-ink/10">×</button>
             </header>
 
@@ -108,13 +136,32 @@ export function ProfileModal({ open, onClose, accountName = 'Your profile', onLo
             </nav>
 
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
-              {page === 'overview' && <Overview stats={stats} showAbandoned={statsScope === 'online'} />}
-              {page === 'dice' && <DiceProfileStats stats={stats} />}
-              {page === 'resources' && <StatGrid>{RESOURCES.map((resource) => <Stat key={resource} label={resource} value={stats.matchStats.resourcesCollected[resource]} />)}<Stat label="Total resources" value={RESOURCES.reduce((sum, resource) => sum + stats.matchStats.resourcesCollected[resource], 0)} /></StatGrid>}
-              {page === 'building' && <StatGrid><Stat label="Roads placed" value={stats.matchStats.roadsPlaced} /><Stat label="Towns placed" value={stats.matchStats.settlementsPlaced} /><Stat label="Cities built" value={stats.matchStats.citiesBuilt} /><Stat label="Longest Road awards" value={stats.longestRoadAwards} /><Stat label="Best road" value={stats.bestLongestRoad} /><Stat label="Combined road length" value={stats.totalLongestRoad} /></StatGrid>}
-              {page === 'activity' && <StatGrid><Stat label="Turns taken" value={stats.matchStats.turnsTaken} /><Stat label="Bank trades" value={stats.matchStats.bankTrades} /><Stat label="Player trades" value={stats.matchStats.playerTrades} /><Stat label="Trade offers" value={stats.matchStats.tradeOffers} /><Stat label="Robber moved" value={stats.matchStats.robberMoves} /><Stat label="Cards stolen" value={stats.matchStats.cardsStolen} /><Stat label="Cards discarded" value={stats.matchStats.cardsDiscarded} /><Stat label="Largest Army awards" value={stats.largestArmyAwards} /></StatGrid>}
-              {page === 'progress' && <StatGrid>{(Object.keys(DEV_LABELS) as DevCardType[]).map((type) => <Stat key={type} label={DEV_LABELS[type]} value={stats.matchStats.devCardsCollected[type]} />)}<Stat label="Cards bought" value={stats.matchStats.devCardsBought} /><Stat label="Cards played" value={stats.matchStats.devCardsPlayed} /></StatGrid>}
-              {page === 'online' && <OnlineHistory games={onlineGames} error={onlineError} enabled={Boolean(getOnlineToken)} />}
+              {page === 'online' ? (
+                <OnlineHistory games={onlineGames} error={onlineError} enabled={Boolean(getOnlineToken)} />
+              ) : statsScope === 'online' && onlineError ? (
+                <div className="flex flex-col items-center gap-3 py-10 text-center">
+                  <p className="text-sm font-bold text-p-red">Could not load your online statistics.</p>
+                  <p className="max-w-sm text-xs text-ink-soft">{onlineError}</p>
+                  <button
+                    type="button"
+                    onClick={() => setReloadKey((key) => key + 1)}
+                    className="rounded-xl bg-p-blue px-4 py-2 text-sm font-extrabold text-white transition hover:brightness-105"
+                  >
+                    Try again
+                  </button>
+                </div>
+              ) : statsScope === 'online' && onlineLoading ? (
+                <p className="py-10 text-center text-sm text-ink-soft">Loading your online statistics…</p>
+              ) : (
+                <>
+                  {page === 'overview' && <Overview stats={stats} showAbandoned={statsScope === 'online'} />}
+                  {page === 'dice' && <DiceProfileStats stats={stats} />}
+                  {page === 'resources' && <StatGrid>{RESOURCES.map((resource) => <Stat key={resource} label={resource} value={stats.matchStats.resourcesCollected[resource]} />)}<Stat label="Total resources" value={RESOURCES.reduce((sum, resource) => sum + stats.matchStats.resourcesCollected[resource], 0)} /></StatGrid>}
+                  {page === 'building' && <StatGrid><Stat label="Roads placed" value={stats.matchStats.roadsPlaced} /><Stat label="Towns placed" value={stats.matchStats.settlementsPlaced} /><Stat label="Cities built" value={stats.matchStats.citiesBuilt} /><Stat label="Longest Road awards" value={stats.longestRoadAwards} /><Stat label="Best road" value={stats.bestLongestRoad} /><Stat label="Combined road length" value={stats.totalLongestRoad} /></StatGrid>}
+                  {page === 'activity' && <StatGrid><Stat label="Turns taken" value={stats.matchStats.turnsTaken} /><Stat label="Bank trades" value={stats.matchStats.bankTrades} /><Stat label="Player trades" value={stats.matchStats.playerTrades} /><Stat label="Trade offers" value={stats.matchStats.tradeOffers} /><Stat label="Robber moved" value={stats.matchStats.robberMoves} /><Stat label="Cards stolen" value={stats.matchStats.cardsStolen} /><Stat label="Cards discarded" value={stats.matchStats.cardsDiscarded} /><Stat label="Largest Army awards" value={stats.largestArmyAwards} /></StatGrid>}
+                  {page === 'progress' && <StatGrid>{(Object.keys(DEV_LABELS) as DevCardType[]).map((type) => <Stat key={type} label={DEV_LABELS[type]} value={stats.matchStats.devCardsCollected[type]} />)}<Stat label="Cards bought" value={stats.matchStats.devCardsBought} /><Stat label="Cards played" value={stats.matchStats.devCardsPlayed} /></StatGrid>}
+                </>
+              )}
             </div>
 
             <footer className="flex shrink-0 flex-wrap items-center gap-3 border-t border-ink/10 p-4 dark:border-white/10">
@@ -122,6 +169,15 @@ export function ProfileModal({ open, onClose, accountName = 'Your profile', onLo
               <button type="button" disabled={debugEnabled} onClick={enableDebug} className={`min-h-11 rounded-xl px-4 text-sm font-extrabold transition ${debugEnabled ? 'cursor-default bg-p-green/15 text-p-green' : 'bg-violet-700 text-white hover:bg-violet-600'}`}>{debugEnabled ? 'Debug enabled' : 'Enable debug'}</button>
               {onLogout && <button type="button" onClick={onLogout} className="min-h-11 rounded-xl bg-p-red/15 px-4 text-sm font-extrabold text-p-red transition hover:bg-p-red hover:text-white">Log out</button>}
             </footer>
+            {onSaveUsername && (
+              <UsernameDialog
+                open={renaming}
+                current={username ?? null}
+                dismissable
+                onClose={() => setRenaming(false)}
+                onSave={onSaveUsername}
+              />
+            )}
           </motion.section>
         </motion.div>
       )}

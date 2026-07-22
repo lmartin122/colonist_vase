@@ -6,7 +6,9 @@ import {
   reduce,
   redactAction,
   isOfferFullyDeclined,
+  normalizeUsername,
   redactState,
+  validateUsername,
   victoryPoints,
   type Action,
   type ClientToServerEvents,
@@ -16,7 +18,7 @@ import {
 } from '@colonist/shared';
 import { verifyToken } from './auth';
 import { config } from './config';
-import { getUserStats, listUserGames, recordFinishedGame, upsertUser } from './db';
+import { getProfile, getUserStats, isPersistenceEnabled, listUserGames, recordFinishedGame, setUsername, upsertUser } from './db';
 import { RoomManager, seatOfUser, snapshot, type Room } from './rooms';
 import { authorizeSeat, driveBots } from './runtime';
 
@@ -102,6 +104,39 @@ app.get('/me', requireAuth, (req: AuthedRequest, res) => {
   res.json(req.identity);
 });
 
+app.get('/me/profile', requireAuth, async (req: AuthedRequest, res) => {
+  const identity = req.identity!;
+  const profile = await getProfile(identity.userId);
+  // Without a database a username can never be stored, so report the Auth0 name
+  // as-is rather than trapping the player behind the "choose a username" dialog.
+  const username = (await isPersistenceEnabled())
+    ? profile?.username ?? null
+    : identity.name;
+  res.json({ userId: identity.userId, name: profile?.name ?? identity.name, username });
+});
+
+app.put('/me/username', requireAuth, async (req: AuthedRequest, res) => {
+  const raw = typeof req.body?.username === 'string' ? req.body.username : '';
+  const invalid = validateUsername(raw);
+  if (invalid) {
+    res.status(400).json({ error: invalid });
+    return;
+  }
+  const username = normalizeUsername(raw);
+  // Make sure the row exists before claiming a name on it.
+  await upsertUser(req.identity!.userId, req.identity!.name);
+  const result = await setUsername(req.identity!.userId, username);
+  if (result === 'taken') {
+    res.status(409).json({ error: 'That username is already taken' });
+    return;
+  }
+  if (result === 'unavailable') {
+    res.status(503).json({ error: 'Profiles are unavailable right now' });
+    return;
+  }
+  res.json({ username });
+});
+
 app.get('/me/games', requireAuth, async (req: AuthedRequest, res) => {
   res.json(await listUserGames(req.identity!.userId));
 });
@@ -127,8 +162,11 @@ io.use(async (socket, next) => {
     // access token carries no verified name claim (see verifyToken).
     const identity = await verifyToken(token, String(socket.handshake.auth?.name ?? ''));
     socket.data.userId = identity.userId;
-    socket.data.name = identity.name;
-    void upsertUser(identity.userId, identity.name);
+    // The stored username wins over anything the client sends: it is the name
+    // the player claimed, and it is unique. Falls back to the Auth0 profile name
+    // for accounts that have not picked one yet (or when there is no database).
+    const username = await upsertUser(identity.userId, identity.name);
+    socket.data.name = username ?? identity.name;
     next();
   } catch (err) {
     console.warn('[auth] socket rejected:', (err as Error).message, '| devNoAuth:', config.devNoAuth, '| domain set:', Boolean(config.auth.domain), '| audience:', config.auth.audience || '(none)');
@@ -147,7 +185,7 @@ function broadcastRoom(room: Room): void {
     if (seat.isBot || !seat.connected || !seat.socketId) continue;
     io.to(seat.socketId).emit('room', { ...publicSnapshot, yourSeat: seat.seat });
   }
-  for (const socketId of room.spectators) {
+  for (const socketId of room.spectators.keys()) {
     io.to(socketId).emit('room', { ...publicSnapshot, yourSeat: null });
   }
 }
@@ -163,7 +201,7 @@ function broadcastState(room: Room, action: Action | null = null, actorSeat: num
       action: action && actorSeat !== null ? redactAction(action, actorSeat, seat.seat) : null,
     });
   }
-  for (const socketId of room.spectators) {
+  for (const socketId of room.spectators.keys()) {
     io.to(socketId).emit('gameState', {
       state: redactState(room.state, null),
       yourSeat: null,
@@ -292,12 +330,14 @@ io.on('connection', (socket) => {
       return ack(ok({ code: room.code, seat: result.seat }));
     }
 
-    room.spectators.add(socket.id);
+    room.spectators.set(socket.id, { userId, name });
     socketRoom.set(socket.id, room.code);
     socket.join(room.code);
     socket.emit('room', { ...snapshot(room), yourSeat: null });
     emitChatHistory(room, socket.id);
     socket.emit('gameState', { state: redactState(room.state, null), yourSeat: null, action: null });
+    // Let seated players see the new watcher's eye badge appear.
+    broadcastRoom(room);
     ack(ok({ code: room.code, seat: null }));
   });
 
@@ -314,6 +354,7 @@ io.on('connection', (socket) => {
       socket.leave(room.code);
       socketRoom.delete(socket.id);
       if (room.spectators.delete(socket.id)) {
+        broadcastRoom(room);
         ack(ok(null));
         return;
       }
@@ -487,6 +528,7 @@ io.on('connection', (socket) => {
     if (room) {
       if (room.spectators.delete(socket.id)) {
         socketRoom.delete(socket.id);
+        broadcastRoom(room);
         return;
       }
       const disconnectedSeat = rooms.disconnect(room, socket.id);
